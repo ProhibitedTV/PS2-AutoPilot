@@ -15,6 +15,7 @@ class ProfileContext:
     motion: float
     template: TemplateMatch | None
     now: float
+    previous_frame: np.ndarray | None = None
 
 
 class GameProfile(ABC):
@@ -28,4 +29,10 @@ class GameProfile(ABC):
         controller.release_all()
         controller.tap("start", 0.10)
         controller.tap("confirm", 0.10)
-        return "generic recovery"
+        controller.tap("cancel", 0.10)
+        controller.hold("up")
+        import time
+
+        time.sleep(0.25)
+        controller.release("up")
+        return "generic unstick sequence"
