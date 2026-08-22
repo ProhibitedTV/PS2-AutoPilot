@@ -20,14 +20,14 @@ def test_franchise_setup_is_escape_state():
     assert result.screen == MaddenScreen.WRONG_MODE
 
 
-def test_pocket_presence_drill_is_escape_state():
+def test_pocket_presence_drill_is_cancel_dialog():
     s = snap(
         ("SELECT DRILL/PLAYER", 0.08),
         ("POCKET PRESENCE", 0.25),
         ("START DRILL", 0.72),
         ("CANCEL", 0.82),
     )
-    assert classify_madden_screen(s).screen == MaddenScreen.WRONG_MODE
+    assert classify_madden_screen(s).screen == MaddenScreen.DRILL_DIALOG
 
 
 def test_play_now_main_menu():
@@ -62,7 +62,7 @@ class FakeController:
         self.events.append(("neutral", None))
 
 
-def test_navigator_escapes_pocket_presence():
+def test_navigator_cancels_pocket_presence_popup():
     from ps2_autopilot.madden_menu import MaddenMenuNavigator
 
     nav = MaddenMenuNavigator()
@@ -71,9 +71,9 @@ def test_navigator_escapes_pocket_presence():
         snap(("SELECT DRILL/PLAYER", 0.08), ("POCKET PRESENCE", 0.25), ("CANCEL", 0.82))
     )
     action = nav.act(controller, assessment, now=10.0)
-    assert ("tap", "triangle") in controller.events
+    assert ("tap", "cross") in controller.events
     assert nav.force_title
-    assert "ESCAPE" in action
+    assert "cancel drill" in action
 
 
 def test_navigator_title_then_play_now():
