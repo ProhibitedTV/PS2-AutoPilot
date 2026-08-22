@@ -1,18 +1,22 @@
 window_title_contains: "PCSX2"
 loop_hz: 12
+
 controller:
   backend: virtual_gamepad
   focus_window: true
+
 watchdog:
   motion_threshold: 0.008
   stuck_seconds: 25
   recovery_cooldown_seconds: 8
   reload_savestate_after_recoveries: 4
   load_state_key: "f3"
+
 overlay:
   enabled: true
   host: "127.0.0.1"
   port: 8765
+
 profile:
   name: madden2005
   template_threshold: 0.84
@@ -22,9 +26,15 @@ profile:
   live_hold_seconds: 0.55
   snap_causality_seconds: 1.55
   pre_snap_wait_seconds: 1.15
-  menu_action_seconds: 1.75
-  playcall_action_seconds: 1.15
+  menu_action_seconds: 1.05
+  playcall_action_seconds: 0.95
   kick_power_seconds: 0.72
   kick_accuracy_seconds: 0.34
   aggression: 0.68
-  steering_wander: 0.30
+  steering_wander: 0.24
+
+  # v0.4 semantic vision. OCR runs slower than the 12 Hz reflex loop.
+  ocr_enabled: true
+  ocr_interval_seconds: 0.70
+  ocr_min_width: 960
+  ocr_min_confidence: 0.42
