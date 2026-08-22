@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+runtime/
+*.iso
+*.bin
+*.cue
+*.chd
+*.elf
+*.ps2
+*.p2s
+bios/
+roms/
+games/
+# Local calibration captures may contain copyrighted game imagery.
+profiles/*/templates/*.png
+!profiles/*/templates/.gitkeep
