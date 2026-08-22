@@ -23,7 +23,24 @@ if not defined PYTHON_EXE (
   )
 )
 
-rem Finally probe common per-user and machine-wide python.org install paths.
+rem Some Windows/App Execution Alias + Conda setups expose a newer interpreter
+rem only as python3.exe. Resolve the real interpreter through sys.executable.
+if not defined PYTHON_EXE (
+  where python3 >nul 2>&1
+  if not errorlevel 1 (
+    for /f "usebackq delims=" %%P in (`python3 -c "import sys; (print(sys.executable) if sys.version_info >= (3,11) else sys.exit(1))" 2^>nul`) do set "PYTHON_EXE=%%P"
+  )
+)
+
+rem If a Conda environment is already active, prefer its interpreter when compatible.
+if not defined PYTHON_EXE if defined CONDA_PREFIX (
+  if exist "%CONDA_PREFIX%\python.exe" (
+    "%CONDA_PREFIX%\python.exe" -c "import sys; raise SystemExit(0 if sys.version_info >= (3,11) else 1)" >nul 2>&1
+    if not errorlevel 1 set "PYTHON_EXE=%CONDA_PREFIX%\python.exe"
+  )
+)
+
+rem Probe common python.org and Conda installation paths.
 if not defined PYTHON_EXE (
   for %%P in (
     "%LocalAppData%\Programs\Python\Python314\python.exe"
@@ -34,6 +51,9 @@ if not defined PYTHON_EXE (
     "%ProgramFiles%\Python313\python.exe"
     "%ProgramFiles%\Python312\python.exe"
     "%ProgramFiles%\Python311\python.exe"
+    "%USERPROFILE%\anaconda3\python.exe"
+    "%USERPROFILE%\miniconda3\python.exe"
+    "%USERPROFILE%\pinokio\bin\miniconda\python.exe"
   ) do (
     if not defined PYTHON_EXE if exist "%%~P" (
       "%%~P" -c "import sys; raise SystemExit(0 if sys.version_info >= (3,11) else 1)" >nul 2>&1
@@ -90,9 +110,11 @@ echo   py -0p
 echo   where py
 echo   where python
 echo   python --version
+echo   where python3
+echo   python3 --version
 echo.
 echo If Python is installed in a custom folder, either add that folder to PATH
- echo or recreate the venv explicitly with the full executable path, for example:
+echo or recreate the venv explicitly with the full executable path, for example:
 echo   "C:\Path\To\Python\python.exe" -m venv .venv
 echo.
 echo If no Python 3.11+ installation appears, install a current 64-bit Python,

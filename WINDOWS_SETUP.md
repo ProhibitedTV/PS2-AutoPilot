@@ -13,10 +13,11 @@ bootstrap.cmd
 The bootstrap script:
 
 1. looks for any compatible Python **3.11+** installation;
-2. prefers the Windows `py` launcher, then `python.exe` on PATH, then common python.org install folders;
-3. creates `.venv` with the compatible interpreter (or rebuilds an old incompatible `.venv`);
-4. upgrades pip/setuptools/wheel inside that venv;
-5. installs PS2 AutoPilot with virtual-gamepad support.
+2. prefers the Windows `py` launcher, then `python.exe` on PATH, then `python3.exe`, an active Conda environment, and common python.org/Conda install folders;
+3. resolves aliases through `sys.executable` so Windows App Execution Aliases can still lead to the real interpreter;
+4. creates `.venv` with the compatible interpreter (or rebuilds an old incompatible `.venv`);
+5. upgrades pip/setuptools/wheel inside that venv;
+6. installs PS2 AutoPilot with virtual-gamepad support.
 
 It does **not** require exactly Python 3.11. Python 3.12, 3.13, and newer compatible Python 3 releases can be used as long as the project's dependencies support them.
 
@@ -42,11 +43,27 @@ py -0p
 where py
 where python
 python --version
+where python3
+python3 --version
 ```
 
-`py -0p` is especially useful because the Windows Python launcher can know about Python installations that are not on PATH.
+`py -0p` is especially useful because the Windows Python launcher can know about Python installations that are not on PATH. On systems with several historical Python installs, it is also possible for `python` to resolve to an old interpreter while `python3` resolves to a newer Conda or Windows App Execution Alias interpreter.
 
-If Python is installed in a custom location, you can create the venv directly with its full path:
+To see the real executable behind a working alias:
+
+```bat
+python3 -c "import sys; print(sys.executable); print(sys.version)"
+```
+
+Common Conda interpreter locations checked by bootstrap include:
+
+```text
+%USERPROFILE%\anaconda3\python.exe
+%USERPROFILE%\miniconda3\python.exe
+%USERPROFILE%\pinokio\bin\miniconda\python.exe
+```
+
+If Python is installed in another custom location, you can create the venv directly with its full path:
 
 ```bat
 "C:\Path\To\Python\python.exe" -m venv .venv
@@ -73,6 +90,7 @@ That almost always means the `pip` command is attached to an older Python interp
 ```bat
 python --version
 py -0p
+python3 --version
 ```
 
 Do **not** use the global `pip install -e ...` command until the Python 3.11+ venv is active. Prefer `bootstrap.cmd`, which always invokes the venv's Python directly.
