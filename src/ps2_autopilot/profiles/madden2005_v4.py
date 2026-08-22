@@ -97,6 +97,7 @@ class Madden2005V4Profile(TemporalMadden2005Profile):
             MaddenScreen.TITLE,
             MaddenScreen.MAIN_MENU,
             MaddenScreen.WRONG_MODE,
+            MaddenScreen.DRILL_DIALOG,
             MaddenScreen.TEAM_SELECT,
             MaddenScreen.CONTROLLER_SELECT,
             MaddenScreen.MATCHUP,
