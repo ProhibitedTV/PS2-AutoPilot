@@ -2,37 +2,55 @@
 
 Windows-first autonomous PCSX2 gameplay framework for unattended livestreams.
 
-The first real target is **Madden NFL 2005 (PS2)**. AutoPilot captures the active PCSX2 render window, classifies broad football states, drives a virtual controller, recovers from dead air, and publishes live telemetry for an OBS browser source.
+The first real target is **Madden NFL 2005 (PS2)**. AutoPilot captures the active PCSX2 render, reads the game screen, drives a virtual controller, recovers from dead air, and publishes its internal state to an OBS browser overlay.
 
-## v0.3 — temporal football brain
+## v0.4 — semantic Madden agent
 
-The Madden driver now reasons across time instead of treating every screenshot independently:
+The first live test proved the controller chain worked, but also exposed the biggest problem with v0.3: random menu input happily created a Franchise and entered the **Select Drill/Player → Pocket Presence** path.
 
-- follows the largest visible window owned by the PCSX2 process, including older builds that open a separate GS/render window
-- distinguishes `PLAYCALL`, `PRE_SNAP`, `LIVE`, and `POST_PLAY` phases with hysteresis so low-motion frames do not constantly flip state
-- infers **offense vs defense** from optional labeled templates and from snap causality
-- uses separate offense and defense policies instead of one possession-agnostic button mash
-- offense has run/pass intent, passing-icon timing, receiver selection, catch attempts, sprint, spin, jukes, ball protection, and dives
-- defense switches to the player nearest the ball, pursues the field's motion centroid, sprints/sheds, tackles, contests passes, and uses rush moves
-- uses grass centroid to steer back toward usable field space instead of blindly oscillating left/right
-- play calling is now a short Madden-aware formation/play macro rather than a single random face-button press
-- post-play logic skips cutscenes without immediately confusing the next pre-snap phase
-- kick meter logic remains a timed three-X sequence and now reports kick statistics
-- adds L2/R2 virtual trigger support for future stiff-arm, throw-away, strip-ball, and advanced policies
-- exposes phase, inferred role/confidence, play intent, tracking targets, and football stats to OBS
-- adds a runtime doctor and better calibration capture tooling
+v0.4 replaces that behavior with a semantic layer:
 
-This is still a vision-first prototype. It does **not** claim to understand score, down/distance, clock, routes, or every menu yet. Those become the next layer once calibration samples from the actual PCSX2 render are available.
+- optional local OCR using RapidOCR/ONNX Runtime; no cloud API is required
+- OCR frames are upscaled before inference so older PCSX2 builds with small client captures remain readable
+- recognizes title, Play Now/main menu, team select, controller select, matchup/settings, coin toss, play calling, kick meter, pause/final screens, dialogs, and known wrong-mode screens
+- treats `FRANCHISE SETUP`, `SELECT DRILL/PLAYER`, `POCKET PRESENCE`, Training Camp, Mini Camp, Madden 101, and similar branches as **escape states**
+- wrong-mode recovery backs toward the title screen instead of confirming deeper into a menu
+- after a recognized title screen, it uses the main menu's default **Play Now** route instead of menu RNG
+- parses down/distance, quarter, and game clock when OCR can read them
+- uses down/distance to bias offensive play intent toward run or pass
+- play calling no longer wanders around with random D-pad input
+- passing keeps the QB in the pocket, brings up receiver icons, chooses among all five receiver buttons, takes control of the receiver, and attempts a catch
+- rushing adds sprint, jukes, spin, stiff arms, ball protection, and situational dives
+- defense pursues a two-dimensional motion target and mixes switch-nearest-ball, sprint/shed, tackle, play-ball, strip, rush moves, and Hit Stick attempts
+- kicking keeps the three-stage X timing: start meter, stop power, stop accuracy
+- OBS now exposes semantic screen, OCR text, situation, role confidence, play plan, menu escapes, and tracking data
 
-## Install
+The agent still improves dramatically with calibration templates, but v0.4 no longer requires templates just to avoid obviously wrong game modes.
 
-Python 3.11+ on Windows:
+## Install / update
 
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -e .[virtual-gamepad]
+Python 3.11 or 3.12 is recommended for the full OCR stack on Windows.
+
+Fresh setup:
+
+```bat
+bootstrap.cmd
+```
+
+Existing clone after pulling a new version:
+
+```bat
+git pull
+bootstrap.cmd
+.venv\Scripts\activate.bat
+```
+
+`bootstrap.cmd` installs the `full` extra: virtual gamepad plus local OCR.
+
+Manual equivalent:
+
+```bat
+python -m pip install -e ".[full]"
 ```
 
 PCSX2 controller port 1 should map the virtual Xbox 360 controller as follows:
@@ -48,164 +66,138 @@ PCSX2 controller port 1 should map the virtual Xbox 360 controller as follows:
 | Left stick | Left analog |
 | Right stick | Right analog |
 
-## Check the runtime first
+## Check the runtime
 
-Boot PCSX2, then run:
+Boot PCSX2 with Madden visible and run:
 
-```powershell
-ps2-autopilot-doctor --config config/madden2005.yaml
+```bat
+ps2-autopilot-doctor --config config\madden2005.yaml
 ```
 
-The doctor checks the Windows runtime, resolves the real PCSX2 render window, captures a frame, checks the virtual-gamepad package, counts calibration templates, and prints the current Madden grass/field probe.
+v0.4 checks Windows, the active PCSX2 render window, frame capture, the virtual gamepad backend, calibration templates, the Madden field detector, and RapidOCR semantic vision. The OCR check prints a preview of text read from the current game frame.
 
-This is especially useful with **PCSX2 1.6.x**, where the game renderer may be a different top-level window from the main PCSX2 interface. AutoPilot now follows the largest visible window belonging to the same PCSX2 process.
+If the game is sitting on `PRESS START`, a healthy OCR check should usually show some version of that phrase.
 
-## Run Madden 2005
+## Run it
 
-Boot Madden normally, enter a safe menu or exhibition flow, then:
-
-```powershell
-ps2-autopilot --config config/madden2005.yaml
+```bat
+ps2-autopilot --config config\madden2005.yaml
 ```
 
-Add this as an OBS Browser Source:
+Stop with `Ctrl+C`.
+
+OBS Browser Source:
 
 ```text
 http://127.0.0.1:8765/
 ```
 
-The overlay reports what the machine currently believes:
+The HUD now exposes information like:
 
 ```text
-PHASE       PRE_SNAP
-ROLE        OFFENSE 82%
-PLAY PLAN   PASS
-ACTION      snap ball
-RAW VISION  field_idle
-FIELD/TARGET +0.04 / -0.21
-PLAYS       8 complete / 9 started
+SEMANTIC SCREEN  PLAYCALL 94%
+PHASE            PLAYCALL
+SITUATION        3&7 Q4 2:14
+ROLE             OFFENSE 82%
+PLAY PLAN        PASS
+ACTION           playcall: circle (pass)
+OCR              3RD & 7 | QTR 4 | 2:14 | ASK MADDEN ...
 ```
 
-## How possession inference works
+## Menu policy
 
-The first version could not distinguish offense and defense. v0.3 uses two signals:
+AutoPilot's navigation goal is deliberately narrow:
 
-1. **Calibration templates** such as `pre_snap_offense` or `playcall_defense` are high-confidence evidence.
-2. When templates are absent, the bot watches cause-and-effect. If its pre-snap Cross press is followed quickly by live motion, it was probably the offense and just snapped the ball. If the play begins from pre-snap without its snap attempt, it was probably defending.
+```text
+TITLE
+  -> PLAY NOW
+  -> TEAM SELECT
+  -> CONTROLLER/SIDE SELECT
+  -> MATCHUP / SETTINGS
+  -> COIN TOSS
+  -> PLAYCALL
+  -> FOOTBALL
+```
 
-That is intentionally probabilistic. The role and confidence are visible in the OBS telemetry so bad inferences are easy to diagnose.
+Known non-goal branches are backed out of rather than explored. This is important for unattended streaming: a conservative reset is better than spending an hour inside Franchise training camp.
+
+## Football policy
+
+### Offense
+
+Before the snap, Cross snaps the ball. On pass plays, the bot keeps the quarterback mostly in the pocket, uses Cross to bring up passing icons, then throws with Cross/Square/Circle/L1/R1. Once the ball is out it tries to take the receiver and make the catch. If the pocket survives too long without a throw, it can throw the ball away.
+
+On runs, the bot attacks upfield and uses sprint, jukes, spin, stiff arms, protect-ball, and occasional dives. Down and distance bias the call: short yardage trends run; long third downs trend pass.
+
+### Defense
+
+The bot switches toward the defender nearest the ball, steers toward the 2D motion centroid, and mixes sprint/shed, dive tackle, play-ball/intercept, strip attempts, rush moves, and Hit Stick attempts.
+
+### Kicking
+
+The kick meter is treated as:
+
+1. Cross — start meter
+2. Cross — stop power
+3. Cross — stop accuracy
+
+The timing remains configurable in `config/madden2005.yaml`.
 
 ## Calibration
 
-Full-screen templates work, but smaller HUD/UI crops are much more robust because the field and players constantly change.
+OCR gives semantic context, while templates remain useful for stable visual states.
 
-Capture one frame:
-
-```powershell
-ps2-autopilot-capture --label pre_snap_offense
-```
-
-Capture five samples:
-
-```powershell
+```bat
 ps2-autopilot-capture --label playcall_offense --series 5 --interval 0.4
-```
-
-Capture only a stable region of the screen using normalized `x,y,width,height` fractions:
-
-```powershell
+ps2-autopilot-capture --label pre_snap_offense --series 5 --interval 0.4
+ps2-autopilot-capture --label pre_snap_defense --series 5 --interval 0.4
 ps2-autopilot-capture --label kick_meter --roi 0.20,0.55,0.60,0.40 --series 3
 ```
 
-Useful labels:
-
-- `playcall_offense`
-- `playcall_defense`
-- `pre_snap_offense`
-- `pre_snap_defense`
-- `post_play`
-- `kick_meter`
-- `pause`
-- `game_over`
-
-Numbered series such as `playcall_offense_01.png` are recognized automatically.
-
-Captured templates are stored under `profiles/madden2005/templates/` and are gitignored by default because they may contain copyrighted game imagery.
-
-## Madden policy
-
-The controller policy is based on the standard PS2 control layout used by Madden 2005:
-
-**Offense**
-
-- Cross: snap; after the snap, passing icons / receiver Cross / runner sprint depending context
-- Square/Circle/L1/R1: receiver choices during passing and ball-carrier moves during rushing
-- Triangle: catch / protect ball depending context
-- left stick: upfield movement corrected toward the visible field centroid
-
-**Defense**
-
-- Cross: defender nearest the ball
-- Circle: sprint / shove blocker
-- Square: dive tackle
-- Triangle: jump / intercept / hands up
-- L1/R1: rush/swim-style defensive moves
-- left stick: pursuit biased toward the motion centroid
-
-The policy deliberately uses controls that remain reasonably useful even when the inferred play type is imperfect.
-
-## Reliability
-
-The outer watchdog still handles dead air:
-
-1. profile performs a soft state-specific recovery for long-lived menus/playcall/pre-snap/post-play states
-2. global motion watchdog runs a Madden recovery sequence
-3. repeated failures trigger the configured PCSX2 save-state reload key
-
-The goal is not just to make a clever agent. It is to keep a stream producing footage instead of spending twenty minutes stuck on a menu.
+Useful labels include `playcall_offense`, `playcall_defense`, `pre_snap_offense`, `pre_snap_defense`, `post_play`, `kick_meter`, `pause`, and `game_over`. Captured game imagery is gitignored.
 
 ## Architecture
 
 ```text
-PCSX2 process
-   |
-   +-> largest visible render window
-             |
-             v
-        frame capture ------------------------+
-             |                                |
-             v                                v
-      field / motion CV                template matcher
-             |                                |
-             +--------------+-----------------+
-                            v
-                    temporal phase model
-                            |
-                   possession inference
-                            |
-               +------------+------------+
-               |                         |
-          offense policy            defense policy
-               |                         |
-               +------------+------------+
-                            v
-                    virtual Xbox pad
-                            |
-                            v
-                          PCSX2
+PCSX2
+  |
+  +--> frame capture ------------------------------+
+  |                                                |
+  +--> field/motion CV                             |
+  |                                                v
+  +--> low-rate local OCR ---> semantic screen / situation
+                                                   |
+                         +-------------------------+
+                         v
+                 temporal football state
+                         |
+              possession + down/distance
+                         |
+            +------------+-------------+
+            |                          |
+       menu navigator             field policy
+                                      |
+                        +-------------+-------------+
+                        |                           |
+                     offense                      defense
+                        +-------------+-------------+
+                                      |
+                                virtual Xbox pad
+                                      |
+                                    PCSX2
 
-phase / role / action / metrics -> local HTTP overlay -> OBS
+telemetry ---------------------------------------> OBS
 ```
 
-## Current next targets
+## Next targets
 
-1. calibrate against the actual Madden 2005 PCSX2 render and tune thresholds
-2. infer down, distance, score, quarter, clock, and possession from scoreboard/UI crops
-3. distinguish run/pass/kick/punt situations from play-call UI
-4. improve field/player localization beyond green and motion centroids
-5. add clock management, fourth-down logic, red-zone behavior, and defensive situational calls
-6. automate the complete exhibition boot -> game -> final -> next-game loop
-7. add a director layer that can rotate games and expose high-level behavior to stream/chat controls
+1. live-calibrate OCR/vision against actual Madden game screens
+2. parse score and field position reliably
+3. recognize exact formation/play names and choose better calls
+4. detect receivers/defenders rather than using motion centroids alone
+5. add punt/field-goal/fourth-down logic
+6. add clock management, red-zone policy, and two-minute offense
+7. automate final screen -> next exhibition game for continuous streams
 
 ## Legal / repository hygiene
 

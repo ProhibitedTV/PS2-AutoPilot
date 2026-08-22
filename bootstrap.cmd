@@ -5,7 +5,6 @@ cd /d "%~dp0"
 set "PYTHON_EXE="
 
 echo [PS2 AutoPilot] Windows bootstrap
-
 echo [1/4] Finding compatible Python 3.11+...
 
 rem Prefer the Windows Python launcher when present. `py -3` selects the
@@ -87,8 +86,8 @@ echo [3/4] Updating packaging tools...
 ".venv\Scripts\python.exe" -m pip install --upgrade pip setuptools wheel
 if errorlevel 1 goto :failed
 
-echo [4/4] Installing PS2 AutoPilot and virtual gamepad support...
-".venv\Scripts\python.exe" -m pip install -e ".[virtual-gamepad]"
+echo [4/4] Installing PS2 AutoPilot, virtual gamepad, and OCR support...
+".venv\Scripts\python.exe" -m pip install -e ".[full]"
 if errorlevel 1 goto :failed
 
 echo.
