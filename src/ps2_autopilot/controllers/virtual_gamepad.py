@@ -6,7 +6,11 @@ from .base import Controller
 
 
 class VirtualGamepadController(Controller):
-    """Xbox 360 virtual controller for PCSX2 via ViGEm/vgamepad."""
+    """Xbox 360 virtual controller for PCSX2 via ViGEm/vgamepad.
+
+    PCSX2 should map A/B/X/Y to PS2 Cross/Circle/Square/Triangle and the
+    Xbox triggers to PS2 L2/R2.
+    """
 
     def __init__(self) -> None:
         try:
@@ -15,6 +19,7 @@ class VirtualGamepadController(Controller):
             raise RuntimeError(
                 "virtual_gamepad backend requires: pip install -e .[virtual-gamepad]"
             ) from exc
+
         self.vg = vg
         self.pad = vg.VX360Gamepad()
         self.held: set[str] = set()
@@ -44,7 +49,22 @@ class VirtualGamepadController(Controller):
             raise KeyError(f"No virtual-gamepad mapping for '{action}'.")
         return self.buttons[action]
 
+    def _set_trigger(self, action: str, value: float) -> bool:
+        if action == "l2":
+            self.pad.left_trigger_float(value_float=max(0.0, min(1.0, value)))
+            return True
+        if action == "r2":
+            self.pad.right_trigger_float(value_float=max(0.0, min(1.0, value)))
+            return True
+        return False
+
     def tap(self, action: str, duration: float = 0.08) -> None:
+        if self._set_trigger(action, 1.0):
+            self.pad.update()
+            time.sleep(duration)
+            self._set_trigger(action, 0.0)
+            self.pad.update()
+            return
         button = self._button(action)
         self.pad.press_button(button=button)
         self.pad.update()
@@ -53,13 +73,16 @@ class VirtualGamepadController(Controller):
         self.pad.update()
 
     def hold(self, action: str) -> None:
-        if action not in self.held:
+        if action in self.held:
+            return
+        if not self._set_trigger(action, 1.0):
             self.pad.press_button(button=self._button(action))
-            self.held.add(action)
-            self.pad.update()
+        self.held.add(action)
+        self.pad.update()
 
     def release(self, action: str) -> None:
-        self.pad.release_button(button=self._button(action))
+        if not self._set_trigger(action, 0.0):
+            self.pad.release_button(button=self._button(action))
         self.held.discard(action)
         self.pad.update()
 
