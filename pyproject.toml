@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ps2-autopilot"
-version = "0.3.0"
+version = "0.4.0"
 description = "Autonomous PCSX2 gameplay framework for unattended livestreams."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -21,6 +21,13 @@ dependencies = [
 
 [project.optional-dependencies]
 virtual-gamepad = ["vgamepad>=0.1.0; platform_system == 'Windows'"]
+ocr = [
+  "rapidocr-onnxruntime>=1.4.4,<2; python_version < '3.13'",
+]
+full = [
+  "vgamepad>=0.1.0; platform_system == 'Windows'",
+  "rapidocr-onnxruntime>=1.4.4,<2; python_version < '3.13'",
+]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [project.scripts]
