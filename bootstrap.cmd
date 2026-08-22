@@ -64,8 +64,9 @@ if not defined PYTHON_EXE (
 
 if not defined PYTHON_EXE goto :no_compatible_python
 
-for /f "delims=" %%V in ('"!PYTHON_EXE!" -c "import platform; print(platform.python_version())"') do set "PYTHON_VERSION=%%V"
-echo       Found Python !PYTHON_VERSION!: !PYTHON_EXE!
+echo       Found interpreter: !PYTHON_EXE!
+"!PYTHON_EXE!" --version
+if errorlevel 1 goto :failed
 
 if not exist ".venv\Scripts\python.exe" (
   echo [2/4] Creating .venv...
