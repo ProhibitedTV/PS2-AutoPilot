@@ -16,9 +16,22 @@ from .window import PCSX2Window
 
 
 DEFAULT_KEYS = {
-    "confirm": "x", "cancel": "a", "start": "enter", "select": "backspace",
-    "up": "up", "down": "down", "left": "left", "right": "right",
-    "l1": "q", "r1": "e", "triangle": "a", "square": "s", "circle": "z", "cross": "x",
+    "confirm": "x",
+    "cancel": "a",
+    "start": "enter",
+    "select": "backspace",
+    "up": "up",
+    "down": "down",
+    "left": "left",
+    "right": "right",
+    "l1": "q",
+    "r1": "e",
+    "l2": "1",
+    "r2": "3",
+    "triangle": "a",
+    "square": "s",
+    "circle": "z",
+    "cross": "x",
 }
 
 
@@ -28,6 +41,7 @@ class AutopilotApp:
         raw = config.raw
         self.window = PCSX2Window(config.window_title_contains)
         self.grabber = FrameGrabber(self.window)
+
         controller_cfg = raw.get("controller", {})
         backend = str(controller_cfg.get("backend", "keyboard"))
         if backend == "virtual_gamepad":
@@ -38,6 +52,7 @@ class AutopilotApp:
         else:
             raise RuntimeError(f"Unknown controller backend: {backend}")
         self.focus_window = bool(controller_cfg.get("focus_window", True))
+
         wd = raw.get("watchdog", {})
         self.watchdog = MotionWatchdog(
             threshold=float(wd.get("motion_threshold", 0.012)),
@@ -46,6 +61,7 @@ class AutopilotApp:
         )
         self.reload_after = int(wd.get("reload_savestate_after_recoveries", 3))
         self.load_state_key = str(wd.get("load_state_key", "f3"))
+
         profile_cfg = raw.get("profile", {})
         name = str(profile_cfg.get("name", "generic_chaos"))
         if name == "generic_chaos":
@@ -54,6 +70,7 @@ class AutopilotApp:
             self.profile = Madden2005Profile(dict(profile_cfg))
         else:
             raise RuntimeError(f"Unknown profile: {name}")
+
         self.detector = TemplateDetector(project_root / "profiles" / name / "templates")
         self.overlay: OverlayServer | None = None
         overlay_cfg = raw.get("overlay", {})
@@ -67,6 +84,7 @@ class AutopilotApp:
 
     def _load_savestate(self) -> None:
         import pydirectinput
+
         self.controller.release_all()
         pydirectinput.press(self.load_state_key)
 
@@ -78,16 +96,22 @@ class AutopilotApp:
         if self.overlay:
             self.overlay.write_state({"status": "starting"})
             self.overlay.start()
+
         print(f"PS2 AutoPilot running profile={self.profile.name}. Ctrl+C to stop.")
         try:
             while True:
                 started = time.monotonic()
                 frame = self.grabber.grab()
                 motion = motion_score(previous, frame)
+                previous_for_ctx = previous
                 previous = frame
                 template = self.detector.best_match(frame)
                 status = self.watchdog.update(motion)
-                ctx = ProfileContext(frame=frame, motion=motion, template=template, now=started)
+                ctx = ProfileContext(
+                    frame=frame, motion=motion, template=template, now=started,
+                    previous_frame=previous_for_ctx,
+                )
+
                 if status.stuck:
                     action = self.profile.recover(self.controller)
                     self.watchdog.mark_recovery()
@@ -97,18 +121,25 @@ class AutopilotApp:
                         action += " -> load savestate"
                 else:
                     action = self.profile.tick(self.controller, ctx)
+
                 state = {
-                    "status": "running", "profile": self.profile.name,
-                    "motion": round(motion, 4), "still_seconds": round(status.still_seconds, 1),
+                    "status": "running",
+                    "profile": self.profile.name,
+                    "motion": round(motion, 4),
+                    "still_seconds": round(status.still_seconds, 1),
                     "recoveries": self.watchdog.recoveries,
-                    "template": None if template is None else {"name": template.name, "score": round(template.score, 3)},
-                    "action": action, "timestamp": time.time(),
+                    "template": None
+                    if template is None
+                    else {"name": template.name, "score": round(template.score, 3)},
+                    "action": action,
+                    "timestamp": time.time(),
                 }
                 telemetry = getattr(self.profile, "telemetry", None)
                 if callable(telemetry):
                     state.update(telemetry(ctx))
                 if self.overlay:
                     self.overlay.write_state(state)
+
                 elapsed = time.monotonic() - started
                 if elapsed < period:
                     time.sleep(period - elapsed)

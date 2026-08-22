@@ -18,6 +18,9 @@ profile:
   template_threshold: 0.84
   field_green_threshold: 0.20
   live_motion_threshold: 0.020
+  phase_stability_seconds: 0.18
+  live_hold_seconds: 0.55
+  snap_causality_seconds: 1.55
   pre_snap_wait_seconds: 1.15
   menu_action_seconds: 1.75
   playcall_action_seconds: 1.15

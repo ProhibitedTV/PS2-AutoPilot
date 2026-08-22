@@ -1,2 +1,52 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>PS2 AutoPilot</title><style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}body{font-family:Consolas,"Courier New",monospace;color:#eef8ff}.hud{position:absolute;left:22px;bottom:22px;min-width:390px;padding:14px 16px;border:1px solid rgba(160,225,255,.7);background:rgba(3,10,18,.76);box-shadow:0 0 24px rgba(90,205,255,.18)}.title{font-size:18px;letter-spacing:3px;font-weight:700;margin-bottom:8px}.row{display:flex;justify-content:space-between;gap:30px;font-size:13px;line-height:1.65}.k{opacity:.62}.v{text-align:right}.pulse{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:8px;animation:pulse 1s infinite}@keyframes pulse{50%{opacity:.25}}</style></head><body><div class="hud"><div class="title"><span class="pulse"></span>PS2 AUTOPILOT</div><div class="row"><span class="k">STATUS</span><span class="v" id="status">BOOTING</span></div><div class="row"><span class="k">PROFILE</span><span class="v" id="profile">—</span></div><div class="row"><span class="k">GAME STATE</span><span class="v" id="game_state">—</span></div><div class="row"><span class="k">ACTION</span><span class="v" id="action">—</span></div><div class="row"><span class="k">FIELD GREEN</span><span class="v" id="field_green">—</span></div><div class="row"><span class="k">MOTION</span><span class="v" id="motion">—</span></div><div class="row"><span class="k">STILL</span><span class="v" id="still">—</span></div><div class="row"><span class="k">RECOVERIES</span><span class="v" id="recoveries">—</span></div></div><script>const set=(id,v)=>document.getElementById(id).textContent=v??'—';async function refresh(){try{const r=await fetch('/state.json?_='+Date.now(),{cache:'no-store'});const s=await r.json();set('status',(s.status||'UNKNOWN').toUpperCase());set('profile',s.profile);set('game_state',s.game_state);set('action',s.action);set('field_green',s.field_green);set('motion',s.motion);set('still',s.still_seconds==null?'—':s.still_seconds+'s');set('recoveries',s.recoveries)}catch(_){}}setInterval(refresh,300);refresh();</script></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PS2 AutoPilot</title>
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}
+    body{font-family:Consolas,"Courier New",monospace;color:#eef8ff}
+    .hud{position:absolute;left:22px;bottom:22px;min-width:430px;padding:14px 16px;border:1px solid rgba(160,225,255,.7);background:rgba(3,10,18,.78);box-shadow:0 0 24px rgba(90,205,255,.18);clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 18px))}
+    .title{font-size:18px;letter-spacing:3px;font-weight:700;margin-bottom:8px}.row{display:flex;justify-content:space-between;gap:30px;font-size:13px;line-height:1.58}.k{opacity:.62}.v{text-align:right}.strong{font-weight:700}.sep{height:1px;background:rgba(160,225,255,.20);margin:7px 0}.pulse{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:8px;animation:pulse 1s infinite}@keyframes pulse{50%{opacity:.25}}
+  </style>
+</head>
+<body>
+  <div class="hud">
+    <div class="title"><span class="pulse"></span>PS2 AUTOPILOT // MADDEN 05</div>
+    <div class="row"><span class="k">STATUS</span><span class="v" id="status">BOOTING</span></div>
+    <div class="row"><span class="k">PHASE</span><span class="v strong" id="phase">—</span></div>
+    <div class="row"><span class="k">ROLE</span><span class="v strong" id="role">—</span></div>
+    <div class="row"><span class="k">PLAY PLAN</span><span class="v" id="play_intent">—</span></div>
+    <div class="row"><span class="k">ACTION</span><span class="v" id="action">—</span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="k">RAW VISION</span><span class="v" id="game_state">—</span></div>
+    <div class="row"><span class="k">FIELD / TARGET</span><span class="v" id="tracking">—</span></div>
+    <div class="row"><span class="k">MOTION / STILL</span><span class="v" id="motion_line">—</span></div>
+    <div class="row"><span class="k">PLAYS</span><span class="v" id="plays">—</span></div>
+    <div class="row"><span class="k">PASS / TACKLE / KICK</span><span class="v" id="stats">—</span></div>
+    <div class="row"><span class="k">RECOVERIES</span><span class="v" id="recoveries">—</span></div>
+  </div>
+<script>
+const set=(id,v)=>document.getElementById(id).textContent=v ?? '—';
+const f=(v,n=2)=>v==null?'—':Number(v).toFixed(n);
+async function refresh(){
+  try{
+    const r=await fetch('/state.json?_='+Date.now(),{cache:'no-store'});const s=await r.json();
+    set('status',(s.status||'UNKNOWN').toUpperCase());
+    set('phase',`${(s.phase||'—').toUpperCase()} ${s.phase_age==null?'':`(${s.phase_age}s)`}`);
+    set('role',`${(s.possession||'unknown').toUpperCase()}  ${Math.round((s.possession_confidence||0)*100)}%`);
+    set('play_intent',(s.play_intent||'—').toUpperCase());
+    set('action',s.action);
+    set('game_state',s.game_state);
+    set('tracking',`${f(s.field_center)} / ${f(s.motion_target)}`);
+    set('motion_line',`${f(s.motion,4)} / ${s.still_seconds==null?'—':s.still_seconds+'s'}`);
+    set('plays',`${s.plays_completed??0} complete / ${s.plays_started??0} started`);
+    set('stats',`${s.pass_attempts??0} / ${s.tackle_attempts??0} / ${s.kicks??0}`);
+    set('recoveries',s.recoveries);
+  }catch(_){}
+}
+setInterval(refresh,250);refresh();
+</script>
+</body>
+</html>
