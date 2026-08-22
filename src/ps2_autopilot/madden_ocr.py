@@ -4,6 +4,12 @@ from dataclasses import dataclass
 import re
 from typing import Iterable
 
+# Import ONNX Runtime before OpenCV. A subset of Windows/Conda setups can hit
+# DLL initialization failures when native CV/runtime libraries win the load
+# order first. The preload is best-effort; OCR still degrades cleanly if ORT is
+# genuinely unavailable.
+from ps2_autopilot.ort_preload import PRELOAD as ORT_PRELOAD
+
 import cv2
 import numpy as np
 
@@ -67,6 +73,9 @@ class MaddenOCR:
 
     def _ensure_engine(self) -> None:
         if not self.enabled or self._engine is not None or self._engine_error is not None:
+            return
+        if not ORT_PRELOAD.available:
+            self._engine_error = ORT_PRELOAD.error or "ONNX Runtime preload failed"
             return
         try:
             from rapidocr_onnxruntime import RapidOCR
