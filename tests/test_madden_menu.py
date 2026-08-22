@@ -49,3 +49,39 @@ def test_parse_goal_to_go():
     situation = parse_game_situation(s)
     assert situation.down == 2
     assert situation.goal_to_go
+
+
+class FakeController:
+    def __init__(self):
+        self.events = []
+
+    def tap(self, action, duration=0.08):
+        self.events.append(("tap", action))
+
+    def neutral_sticks(self):
+        self.events.append(("neutral", None))
+
+
+def test_navigator_escapes_pocket_presence():
+    from ps2_autopilot.madden_menu import MaddenMenuNavigator
+
+    nav = MaddenMenuNavigator()
+    controller = FakeController()
+    assessment = classify_madden_screen(
+        snap(("SELECT DRILL/PLAYER", 0.08), ("POCKET PRESENCE", 0.25), ("CANCEL", 0.82))
+    )
+    action = nav.act(controller, assessment, now=10.0)
+    assert ("tap", "triangle") in controller.events
+    assert nav.force_title
+    assert "ESCAPE" in action
+
+
+def test_navigator_title_then_play_now():
+    from ps2_autopilot.madden_menu import MaddenMenuNavigator
+
+    nav = MaddenMenuNavigator()
+    controller = FakeController()
+    nav.act(controller, classify_madden_screen(snap(("PRESS START", 0.5))), now=1.0)
+    assert ("tap", "start") in controller.events
+    nav.act(controller, classify_madden_screen(snap(("PLAY NOW", 0.3))), now=2.5)
+    assert ("tap", "cross") in controller.events
