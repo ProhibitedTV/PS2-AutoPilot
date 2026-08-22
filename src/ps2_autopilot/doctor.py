@@ -5,6 +5,9 @@ import platform
 from pathlib import Path
 import time
 
+# Preload ORT before importing capture/OpenCV-heavy modules. Some Windows
+# Conda-derived environments otherwise hit DLL initialization failures.
+from .ort_preload import PRELOAD as ORT_PRELOAD
 from .capture import FrameGrabber
 from .config import load_config
 from .madden_ocr import MaddenOCR
@@ -76,6 +79,15 @@ def main() -> None:
         )
         green, center = vision.field_features(frame)
         report(True, "Madden field probe", f"green={green:.3f} center={center:+.3f}")
+
+        if ORT_PRELOAD.available:
+            report(True, "ONNX Runtime preload", f"v{ORT_PRELOAD.version}")
+        else:
+            report(False, "ONNX Runtime preload", ORT_PRELOAD.error or "unknown failure")
+            print("      Windows fix: install/repair Microsoft Visual C++ 2015-2022 Redistributable (x64).")
+            print("      winget install -e --id Microsoft.VCRedist.2015+.x64")
+            print("      If this venv was created from Anaconda and the DLL error persists,")
+            print("      rebuild .venv from a standalone python.org Python 3.11+ interpreter.")
 
         ocr = MaddenOCR(
             enabled=bool(profile_cfg.get("ocr_enabled", True)),
