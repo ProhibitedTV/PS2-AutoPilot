@@ -3,9 +3,11 @@ from __future__ import annotations
 import argparse
 import platform
 from pathlib import Path
+import time
 
 from .capture import FrameGrabber
 from .config import load_config
+from .madden_ocr import MaddenOCR
 from .madden_vision import MaddenVision
 from .vision import TemplateDetector
 from .window import PCSX2Window
@@ -74,6 +76,23 @@ def main() -> None:
         )
         green, center = vision.field_features(frame)
         report(True, "Madden field probe", f"green={green:.3f} center={center:+.3f}")
+
+        ocr = MaddenOCR(
+            enabled=bool(profile_cfg.get("ocr_enabled", True)),
+            interval_seconds=0.2,
+            min_width=int(profile_cfg.get("ocr_min_width", 960)),
+            min_confidence=float(profile_cfg.get("ocr_min_confidence", 0.42)),
+        )
+        snapshot = ocr.read(frame, time.monotonic())
+        if snapshot.available:
+            preview = snapshot.text[:110] if snapshot.text else "(no readable text on current frame)"
+            report(True, "RapidOCR semantic vision", preview)
+        else:
+            report(
+                False,
+                "RapidOCR semantic vision",
+                snapshot.error or "install with: pip install -e \".[full]\"",
+            )
 
     if failures:
         print(f"\nDoctor found {failures} blocking issue(s).")
