@@ -13,6 +13,7 @@ class MaddenScreen(str, Enum):
     TITLE = "title"
     MAIN_MENU = "main_menu"
     WRONG_MODE = "wrong_mode"
+    DRILL_DIALOG = "drill_dialog"
     TEAM_SELECT = "team_select"
     CONTROLLER_SELECT = "controller_select"
     MATCHUP = "matchup"
@@ -70,9 +71,6 @@ def classify_madden_screen(snapshot: OCRSnapshot) -> MenuAssessment:
 
     text, alpha, header = _text_views(snapshot)
 
-    # High-specificity screens first. The first live run reached both
-    # FRANCHISE SETUP and SELECT DRILL/PLAYER -> POCKET PRESENCE; these are
-    # intentionally treated as escape states, never as something to confirm.
     wrong_header = (
         "FRANCHISE SETUP",
         "SELECT DRILL",
@@ -85,9 +83,12 @@ def classify_madden_screen(snapshot: OCRSnapshot) -> MenuAssessment:
         "CREATE-A-PLAYER",
         "ROSTER MANAGEMENT",
     )
-    if _has(header, *wrong_header) or (
-        _has(text, "POCKET PRESENCE", "START DRILL") and "CANCEL" in text
-    ):
+    if _has(text, "POCKET PRESENCE", "START DRILL") and "CANCEL" in text:
+        # The live Pocket Presence popup defaults to the highlighted Cancel row,
+        # so Cross dismisses it. Treat this separately from a normal back-out.
+        return MenuAssessment(MaddenScreen.DRILL_DIALOG, 0.99, "drill confirmation / cancel selected")
+
+    if _has(header, *wrong_header):
         return MenuAssessment(MaddenScreen.WRONG_MODE, 0.99, "non-Play-Now branch")
 
     if _has(alpha, "PRESS START", "PRESS THE START"):
@@ -133,8 +134,6 @@ def classify_madden_screen(snapshot: OCRSnapshot) -> MenuAssessment:
     if "FORMATION" in text and _has(text, "I FORM", "SHOTGUN", "SINGLEBACK", "GOAL LINE", "DEFENSE"):
         return MenuAssessment(MaddenScreen.PLAYCALL, 0.84, "formation text")
 
-    # Main menu is keyed to PLAY NOW. This lets the navigator deliberately
-    # choose exhibition instead of randomly wandering into Franchise.
     if _has(alpha, "PLAY NOW"):
         return MenuAssessment(MaddenScreen.MAIN_MENU, 0.96, "Play Now visible")
 
@@ -177,8 +176,6 @@ def parse_game_situation(snapshot: OCRSnapshot) -> GameSituation:
     if qmatch:
         quarter = int(qmatch.group(1))
 
-    # Madden screens can contain unrelated timestamps; scoreboard clocks are
-    # overwhelmingly in the 0:00..15:00 range, so keep the first plausible one.
     for cmatch in _CLOCK_RE.finditer(text):
         minutes = int(cmatch.group(1))
         seconds = int(cmatch.group(2))
@@ -190,13 +187,7 @@ def parse_game_situation(snapshot: OCRSnapshot) -> GameSituation:
 
 
 class MaddenMenuNavigator:
-    """Conservative deterministic route from boot to Play Now.
-
-    Random menu confirms caused the first live prototype to create a Franchise
-    and enter Pocket Presence drills. This navigator prefers backing all the way
-    to the title screen whenever it detects a wrong mode, then uses the default
-    main-menu selection to enter Play Now.
-    """
+    """Conservative deterministic route from boot to Play Now."""
 
     def __init__(self, action_seconds: float = 1.05) -> None:
         self.action_seconds = max(0.55, float(action_seconds))
@@ -228,6 +219,15 @@ class MaddenMenuNavigator:
         self._seen(screen, now)
 
         if now < self.next_action_at:
+            return self.current_action
+
+        if screen == MaddenScreen.DRILL_DIALOG:
+            controller.tap("cross", 0.07)
+            self.force_title = True
+            self.after_title_start = False
+            self.escape_count += 1
+            self.next_action_at = now + 0.90
+            self.current_action = "menu: cancel drill popup"
             return self.current_action
 
         if screen == MaddenScreen.WRONG_MODE:
@@ -295,9 +295,6 @@ class MaddenMenuNavigator:
             self.current_action = "menu: skip transition"
             return self.current_action
 
-        # OCR sometimes misses the animated main-menu text at 400x203. After a
-        # recognized title START, one conservative X press targets the default
-        # Play Now selection. Otherwise unknown menus back out instead of diving.
         age = now - self.screen_since
         if self.after_title_start and age >= 0.90:
             controller.tap("cross", 0.07)
