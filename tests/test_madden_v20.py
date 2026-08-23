@@ -1,4 +1,3 @@
-from ps2_autopilot.profiles import Madden2005Profile
 from ps2_autopilot.profiles.madden2005_v20 import Madden2005V20Profile
 
 
@@ -14,8 +13,8 @@ def profile(**overrides):
     return Madden2005V20Profile(cfg)
 
 
-def test_default_profile_alias_points_at_v20():
-    assert Madden2005Profile is Madden2005V20Profile
+def test_v20_profile_remains_available():
+    assert profile().name == "madden2005"
 
 
 def test_extract_matchup_from_captured_team_select_text():
