@@ -21,7 +21,9 @@
     <div class="row"><span class="k">PHASE</span><span class="v strong" id="phase">—</span></div>
     <div class="row"><span class="k">SITUATION</span><span class="v strong" id="situation">—</span></div>
     <div class="row"><span class="k">ROLE</span><span class="v strong" id="role">—</span></div>
+    <div class="row"><span class="k">ROLE EVIDENCE</span><span class="v" id="role_evidence">—</span></div>
     <div class="row"><span class="k">PLAY PLAN</span><span class="v" id="play_intent">—</span></div>
+    <div class="row"><span class="k">LAST EVENT</span><span class="v strong" id="last_event">—</span></div>
     <div class="row"><span class="k">ACTION</span><span class="v" id="action">—</span></div>
     <div class="sep"></div>
     <div class="row"><span class="k">OCR</span><span class="v ocr" id="ocr_text">—</span></div>
@@ -51,7 +53,9 @@ async function refresh(){
     set('phase',`${(s.phase||'—').toUpperCase()} ${s.phase_age==null?'':`(${s.phase_age}s)`}`);
     set('situation',(s.situation||'UNKNOWN').toUpperCase());
     set('role',`${(s.possession||'unknown').toUpperCase()}  ${Math.round((s.possession_confidence||0)*100)}%`);
+    set('role_evidence',s.playcall_role_reason||'—');
     set('play_intent',(s.play_intent||'—').toUpperCase());
+    set('last_event',(s.last_game_event||'none').replaceAll('_',' ').toUpperCase());
     set('action',s.action);
     set('ocr_text',s.ocr_text|| (s.ocr_available===false?'OCR OFF':'—'));
     set('game_state',s.game_state);

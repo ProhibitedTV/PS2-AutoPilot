@@ -47,6 +47,11 @@ profile:
   aggression: 0.68
   steering_wander: 0.24
 
+  # v0.5.2 gameplay policy: one deliberate receiver throw after a short read
+  # instead of treating X as a harmless "show receiver icons" input.
+  pass_read_min_seconds: 1.10
+  pass_read_max_seconds: 2.05
+
   # Semantic vision. OCR runs slower than the 12 Hz reflex loop.
   ocr_enabled: true
   ocr_interval_seconds: 0.70
