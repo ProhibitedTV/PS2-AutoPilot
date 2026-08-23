@@ -13,6 +13,7 @@ from .observability import RuntimeObserver, TracingController
 from .overlay import OverlayServer
 from .profiles import GenericChaosProfile, Madden2005Profile
 from .profiles.base import ProfileContext
+from .runtime_retention import RuntimeRetention
 from .runtime_version import package_version
 from .verbose_trace import VerboseRuntimeTrace
 from .vision import TemplateDetector, motion_score
@@ -71,6 +72,14 @@ class AutopilotApp:
 
         observability_cfg = dict(raw.get("observability", {}))
         runtime_root = project_root / "runtime"
+        retention_cfg = dict(raw.get("runtime_retention", {}))
+        self.retention = RuntimeRetention(
+            runtime_root,
+            max_total_mb=float(retention_cfg.get("max_total_mb", 300.0)),
+            max_failure_bundles=int(retention_cfg.get("max_failure_bundles", 30)),
+            max_unknown_captures=int(retention_cfg.get("max_unknown_captures", 60)),
+            prune_interval_seconds=float(retention_cfg.get("prune_interval_seconds", 60.0)),
+        )
         self.observer = RuntimeObserver(observability_cfg, runtime_root)
         self.verbose_trace = VerboseRuntimeTrace(observability_cfg, runtime_root)
         if self.observer.enabled:
@@ -224,6 +233,13 @@ class AutopilotApp:
                     now=started,
                 )
                 self.verbose_trace.record(decision_id, state, started)
+                retention_result = self.retention.maybe_prune(started)
+                if retention_result is not None and retention_result.removed_items:
+                    print(
+                        f"[runtime] pruned {retention_result.removed_items} old artifacts; "
+                        f"size={retention_result.total_bytes / (1024 * 1024):.1f} MB",
+                        flush=True,
+                    )
                 last_state = state
                 last_action = action
 
