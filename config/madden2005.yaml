@@ -24,19 +24,12 @@ overlay:
   # OBS does not need a fresh state file for every 12 Hz control tick.
   state_hz: 2.0
 
-# Hard disk guardrails. A fresh run24x7.cmd launch clears the previous session;
-# while the active run continues, historical screenshots/bundles are pruned once
-# per minute and the whole runtime tree is held near this ceiling.
 runtime_retention:
   max_total_mb: 300
   max_failure_bundles: 30
   max_unknown_captures: 60
   prune_interval_seconds: 60
 
-# Structured logging for long unattended runs. The decision/input logs remain
-# compact while v0.6 also records a full 1-second telemetry snapshot and a focused
-# spatial stream. This stays intentionally verbose even though the public overlay
-# no longer exposes engineering internals.
 observability:
   enabled: true
   console: true
@@ -69,37 +62,23 @@ profile:
   aggression: 0.68
   steering_wander: 0.24
 
-  # v0.6.1 clock safety. Current-play playcall evidence is preferred, but a Cross
-  # probe is safe on either side of the ball: it snaps on offense and only changes
-  # the selected defender on defense. This prevents stale role evidence from
-  # waiting until the delay-of-game threshold.
   play_clock_urgent_seconds: 8
   pre_snap_failsafe_seconds: 5.0
   pre_snap_probe_interval_seconds: 1.15
   pre_snap_max_failsafe_probes: 3
   playcall_role_fresh_seconds: 18.0
 
-  # Postgame recognition. Q4 0:00 plus a two-team postgame score panel is treated
-  # as GAME_OVER even when OCR never emits the words FINAL SCORE. Hold the final
-  # presentation for a while before advancing so the broadcast still breathes.
   final_zero_clock_confirm_seconds: 0.75
   final_presentation_hold_seconds: 12.0
 
-  # v0.5.2 gameplay policy: one deliberate receiver throw after a short read
-  # instead of treating X as a harmless "show receiver icons" input.
   pass_read_min_seconds: 1.10
   pass_read_max_seconds: 2.05
 
-  # v0.5.3 broadcast pacing. Replays, celebrations and presentation shots are
-  # intentionally preserved. The bot only advances an explicit continue prompt
-  # or a presentation that has remained stuck for a long time.
   presentation_hold_seconds: 8.0
   event_presentation_hold_seconds: 12.0
   presentation_stall_nudge_seconds: 30.0
   presentation_hard_recovery_seconds: 55.0
 
-  # Spatial perception remains fast enough for pursuit while leaving more CPU
-  # headroom for the emulator/encoder than the initial 5 Hz calibration build.
   spatial_interval_seconds: 0.25
   spatial_sample_width: 480
   spatial_player_min_confidence: 0.30
@@ -111,10 +90,10 @@ profile:
   spatial_open_confidence: 0.42
   spatial_max_age_seconds: 0.70
 
-  # Semantic OCR is deliberately slower than the 12 Hz reflex loop. v0.6.1
-  # downsamples 1080p captures before OCR, disables unused orientation
-  # classification, and caps ONNX Runtime thread pools so it cannot burst across
-  # every logical CPU while PCSX2 and OBS are live.
+  # v0.7.0: do one synchronous OCR bootstrap so startup/menu navigation remains
+  # safe, then move recurring RapidOCR inference onto a single latest-frame worker.
+  # The worker queue is bounded to one pending frame; stale work is replaced rather
+  # than accumulating behind PCSX2/OBS/controller timing.
   ocr_enabled: true
   ocr_interval_seconds: 0.85
   ocr_min_width: 960
@@ -123,9 +102,14 @@ profile:
   ocr_intra_op_num_threads: 2
   ocr_inter_op_num_threads: 1
   ocr_use_orientation_classifier: false
+  ocr_async_enabled: true
+  ocr_bootstrap_sync: true
 
-  # 24/7 semantic supervision. Presentation has a deliberately larger budget so
-  # normal Madden replays/cutscenes are preserved rather than treated as dead air.
+  # High-confidence spatial distance can suppress low-value defensive contact
+  # moves while the controlled defender is still clearly far from the target.
+  defense_contact_distance: 0.34
+  defense_far_action_delay_seconds: 0.28
+
   unknown_capture_seconds: 3.0
   unknown_capture_cooldown_seconds: 20.0
   max_unknown_captures: 60
