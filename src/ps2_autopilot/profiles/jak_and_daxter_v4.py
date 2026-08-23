@@ -4,7 +4,6 @@ import cv2
 import numpy as np
 
 from .base import ProfileContext
-from .jak_and_daxter import JakPhase
 from .jak_and_daxter_v3 import JakAndDaxterV3Profile
 
 
@@ -12,9 +11,8 @@ class JakAndDaxterV4Profile(JakAndDaxterV3Profile):
     """Production hardening for Jak's boot/menu boundary.
 
     V3 still depended too heavily on a perfect OCR read of the four-item main menu.
-    V4 adds a renderer-tolerant visual signature for the lime-green NEW GAME row,
-    tolerates partial OCR, and tells the global motion watchdog when a known static
-    title/menu/cutscene is intentionally safe to leave alone.
+    V4 adds a renderer-tolerant visual signature for the lime-green NEW GAME row and
+    tolerates partial OCR while keeping every unrecognized state fail-closed.
     """
 
     # Normalized regions from the real 16:9 PCSX2 capture. They target the text rows,
@@ -46,7 +44,6 @@ class JakAndDaxterV4Profile(JakAndDaxterV3Profile):
         self.main_menu_ocr_markers = 0
         self.main_menu_visual_green_ratio = 0.0
         self.main_menu_visual_competing_ratio = 0.0
-        self.motion_watchdog_suppressions = 0
 
     @staticmethod
     def _green_ratio(frame: np.ndarray, bounds: tuple[float, float, float, float]) -> float:
@@ -129,17 +126,6 @@ class JakAndDaxterV4Profile(JakAndDaxterV3Profile):
 
         return self.title_gate_visible or self.main_menu_visible
 
-    def suppress_motion_watchdog(self, ctx: ProfileContext) -> bool:
-        del ctx
-        suppress = bool(
-            self.title_gate_visible
-            or self.main_menu_visible
-            or self.phase == JakPhase.CUTSCENE
-        )
-        if suppress:
-            self.motion_watchdog_suppressions += 1
-        return suppress
-
     def telemetry(self, ctx: ProfileContext) -> dict:
         state = super().telemetry(ctx)
         state.update(
@@ -150,7 +136,6 @@ class JakAndDaxterV4Profile(JakAndDaxterV3Profile):
                 "jak_main_menu_visual_competing_ratio": round(
                     self.main_menu_visual_competing_ratio, 4
                 ),
-                "jak_motion_watchdog_suppressions": self.motion_watchdog_suppressions,
             }
         )
         return state
