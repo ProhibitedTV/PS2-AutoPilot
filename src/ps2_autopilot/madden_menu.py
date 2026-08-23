@@ -61,6 +61,7 @@ class GameSituation:
     goal_to_go: bool = False
     quarter: int | None = None
     clock_seconds: int | None = None
+    play_clock_seconds: int | None = None
 
     @property
     def label(self) -> str:
@@ -72,6 +73,8 @@ class GameSituation:
             pieces.append(f"Q{self.quarter}")
         if self.clock_seconds is not None:
             pieces.append(f"{self.clock_seconds // 60}:{self.clock_seconds % 60:02d}")
+        if self.play_clock_seconds is not None:
+            pieces.append(f"PC{self.play_clock_seconds}")
         return " ".join(pieces) or "unknown"
 
 
@@ -99,12 +102,7 @@ def find_ocr_line(snapshot: OCRSnapshot, *phrases: str) -> OCRLine | None:
 
 
 def detect_menu_highlight(frame: np.ndarray, snapshot: OCRSnapshot) -> MenuHighlight | None:
-    """Best-effort highlighted-row detection using OCR geometry + Madden UI color.
-
-    Madden 2005 uses colored/high-contrast bars behind the selected menu row. We
-    score horizontal bands around OCR lines rather than hard-coding one menu's
-    pixel coordinates, so the same primitive works at different render sizes.
-    """
+    """Best-effort highlighted-row detection using OCR geometry + Madden UI color."""
 
     if not snapshot.available or not snapshot.lines or frame.size == 0:
         return None
@@ -124,7 +122,6 @@ def detect_menu_highlight(frame: np.ndarray, snapshot: OCRSnapshot) -> MenuHighl
         if y1 <= y0:
             continue
 
-        # Selected bars generally span much farther than the text itself.
         x0 = max(0, int((line.x - max(0.18, line.width * 0.9)) * w))
         x1 = min(w, int((line.x + max(0.18, line.width * 0.9)) * w))
         if x1 - x0 < max(12, int(w * 0.08)):
@@ -248,7 +245,14 @@ _DOWN_RE = re.compile(
 )
 _QTR_RE = re.compile(r"\bQ(?:TR|UARTER)?\s*([1-4])\b", re.IGNORECASE)
 _ORDINAL_QTR_RE = re.compile(r"\b([1-4])(?:ST|ND|RD|TH)\s+(?:QTR|QUARTER)\b", re.IGNORECASE)
+# Madden's broadcast score bug often shows a bare ordinal (e.g. "2ND") next to
+# the game clock. `1STAND10` does not match because there is no word boundary.
+_BARE_ORDINAL_QTR_RE = re.compile(r"\b([1-4])(?:ST|ND|RD|TH)\b", re.IGNORECASE)
 _CLOCK_RE = re.compile(r"\b([0-9]{1,2}):([0-5][0-9])\b")
+# The play clock is commonly rendered as a standalone :15 / :08 / :02 token.
+# Negative lookbehind prevents the seconds half of a normal 2:39 game clock from
+# being mistaken for the play clock.
+_PLAY_CLOCK_RE = re.compile(r"(?<!\d):([0-3]?\d|40)\b")
 
 
 def parse_game_situation(snapshot: OCRSnapshot) -> GameSituation:
@@ -256,7 +260,7 @@ def parse_game_situation(snapshot: OCRSnapshot) -> GameSituation:
         return GameSituation()
 
     text = snapshot.text.upper().replace("|", " ")
-    down = distance = quarter = clock_seconds = None
+    down = distance = quarter = clock_seconds = play_clock_seconds = None
     goal_to_go = False
 
     match = _DOWN_RE.search(text)
@@ -267,7 +271,7 @@ def parse_game_situation(snapshot: OCRSnapshot) -> GameSituation:
         else:
             distance = int(match.group(2))
 
-    qmatch = _QTR_RE.search(text) or _ORDINAL_QTR_RE.search(text)
+    qmatch = _QTR_RE.search(text) or _ORDINAL_QTR_RE.search(text) or _BARE_ORDINAL_QTR_RE.search(text)
     if qmatch:
         quarter = int(qmatch.group(1))
 
@@ -278,7 +282,20 @@ def parse_game_situation(snapshot: OCRSnapshot) -> GameSituation:
             clock_seconds = minutes * 60 + seconds
             break
 
-    return GameSituation(down, distance, goal_to_go, quarter, clock_seconds)
+    play_matches = [int(match.group(1)) for match in _PLAY_CLOCK_RE.finditer(text)]
+    if play_matches:
+        # There should be only one standalone play-clock token. If OCR duplicates
+        # it, the lowest valid number is the safest urgency signal.
+        play_clock_seconds = min(play_matches)
+
+    return GameSituation(
+        down,
+        distance,
+        goal_to_go,
+        quarter,
+        clock_seconds,
+        play_clock_seconds,
+    )
 
 
 class MaddenMenuNavigator:
@@ -333,7 +350,6 @@ class MaddenMenuNavigator:
             self._clear_pending()
             return None
 
-        # UNKNOWN is an allowed transient while a loading screen/cut is in flight.
         if screen not in {pending.source, MaddenScreen.UNKNOWN}:
             self.transaction_failures += 1
             self._clear_pending()
@@ -358,64 +374,38 @@ class MaddenMenuNavigator:
         self._clear_pending()
         self.force_title = True
         controller.tap("triangle", 0.07)
-        self.escape_count += 1
-        self.next_action_at = now + 1.0
+        self.next_action_at = now + self.action_seconds
         self.current_action = "menu: transition failed -> safe backout"
         return self.current_action
 
-    def _tap_transition(
+    def _tap(
         self,
         controller: Controller,
-        screen: MaddenScreen,
         action: str,
-        expected: tuple[MaddenScreen, ...],
         now: float,
-        label: str,
-        wait: float = 1.0,
+        screen: MaddenScreen,
+        expected: tuple[MaddenScreen, ...] = (),
+        delay: float | None = None,
     ) -> str:
         controller.tap(action, 0.08)
-        self._begin(screen, action, expected, now)
-        self.next_action_at = now + wait
-        self.current_action = label
-        return label
+        self.next_action_at = now + (self.action_seconds if delay is None else delay)
+        self.current_action = f"menu: {action}"
+        if expected:
+            self._begin(screen, action, expected, now)
+        return self.current_action
 
-    def _main_menu(
-        self,
-        controller: Controller,
-        snapshot: OCRSnapshot | None,
-        highlight: MenuHighlight | None,
-        now: float,
-    ) -> str:
-        target = find_ocr_line(snapshot, "PLAY NOW") if snapshot is not None else None
-        if target is not None and highlight is not None and highlight.confidence >= 0.30:
-            highlight_text = highlight.text.upper().replace("0", "O")
-            if "PLAY NOW" in highlight_text:
-                return self._tap_transition(
-                    controller,
-                    MaddenScreen.MAIN_MENU,
-                    "cross",
-                    (MaddenScreen.TEAM_SELECT, MaddenScreen.CONTROLLER_SELECT, MaddenScreen.MATCHUP),
-                    now,
-                    "menu: verified highlight -> PLAY NOW",
-                    1.1,
-                )
-            direction = "down" if target.y > highlight.y else "up"
-            controller.tap(direction, 0.07)
-            self.next_action_at = now + 0.48
-            self.current_action = f"menu: move {direction} toward PLAY NOW"
-            return self.current_action
-
-        # OCR can reliably tell us PLAY NOW exists even when visual highlight
-        # confidence is weak. Try confirm transactionally; if it goes somewhere
-        # else the destination check will reject it and back out.
-        return self._tap_transition(
+    def _main_menu(self, controller: Controller, assessment: MenuAssessment, now: float, snapshot: OCRSnapshot | None, highlight: MenuHighlight | None) -> str:
+        if snapshot is not None and highlight is not None:
+            play_now = find_ocr_line(snapshot, "PLAY NOW")
+            if play_now is not None and "PLAY NOW" not in highlight.text.upper():
+                direction = "down" if play_now.y > highlight.y else "up"
+                return self._tap(controller, direction, now, assessment.screen, delay=0.45)
+        return self._tap(
             controller,
-            MaddenScreen.MAIN_MENU,
             "cross",
-            (MaddenScreen.TEAM_SELECT, MaddenScreen.CONTROLLER_SELECT, MaddenScreen.MATCHUP),
             now,
-            "menu: select PLAY NOW (verify destination)",
-            1.2,
+            assessment.screen,
+            (MaddenScreen.TEAM_SELECT, MaddenScreen.CONTROLLER_SELECT, MaddenScreen.MATCHUP),
         )
 
     def act(
@@ -427,192 +417,133 @@ class MaddenMenuNavigator:
         snapshot: OCRSnapshot | None = None,
         highlight: MenuHighlight | None = None,
     ) -> str:
-        controller.neutral_sticks()
         screen = assessment.screen
-        self.highlight = highlight
         self._seen(screen, now)
+        self.highlight = highlight
+        controller.neutral_sticks()
 
-        pending_action = self._pending_step(controller, screen, now)
-        if pending_action is not None:
-            return pending_action
-
+        pending = self._pending_step(controller, screen, now)
+        if pending is not None:
+            return pending
         if now < self.next_action_at:
-            return self.current_action
-
-        if screen == MaddenScreen.DRILL_DIALOG:
-            self._clear_pending()
-            controller.tap("cross", 0.07)
-            self.force_title = True
-            self.after_title_start = False
-            self.escape_count += 1
-            self.next_action_at = now + 0.90
-            self.current_action = "menu: cancel drill popup"
-            return self.current_action
-
-        if screen == MaddenScreen.WRONG_MODE:
-            self._clear_pending()
-            controller.tap("triangle", 0.07)
-            self.force_title = True
-            self.after_title_start = False
-            self.escape_count += 1
-            self.next_action_at = now + 0.85
-            self.current_action = "menu: ESCAPE wrong mode"
             return self.current_action
 
         if screen == MaddenScreen.TITLE:
             self.force_title = False
             self.after_title_start = True
-            return self._tap_transition(
+            return self._tap(
                 controller,
-                screen,
                 "start",
-                (MaddenScreen.MAIN_MENU, MaddenScreen.TEAM_SELECT),
                 now,
-                "menu: START -> main menu",
-                1.25,
+                screen,
+                (MaddenScreen.MAIN_MENU,),
+                delay=1.0,
             )
 
         if screen == MaddenScreen.MAIN_MENU:
-            if self.force_title:
-                controller.tap("triangle", 0.07)
-                self.next_action_at = now + 0.90
-                self.current_action = "menu: reset main menu to title"
-                return self.current_action
-            self.after_title_start = False
-            return self._main_menu(controller, snapshot, highlight, now)
+            return self._main_menu(controller, assessment, now, snapshot, highlight)
+
+        if screen == MaddenScreen.WRONG_MODE:
+            self.force_title = True
+            return self._tap(controller, "triangle", now, screen, delay=0.75)
+
+        if screen == MaddenScreen.DRILL_DIALOG:
+            # Live screenshot showed Cancel highlighted with an X icon. Cross is the
+            # safest way to dismiss this child dialog before backing out of its
+            # Franchise/Training parent.
+            self.force_title = True
+            return self._tap(controller, "cross", now, screen, delay=0.85)
 
         if screen == MaddenScreen.TEAM_SELECT:
-            return self._tap_transition(
+            return self._tap(
                 controller,
-                screen,
                 "cross",
-                (MaddenScreen.CONTROLLER_SELECT, MaddenScreen.MATCHUP, MaddenScreen.GAME_SETTINGS),
                 now,
-                "menu: accept teams",
-                1.2,
+                screen,
+                (MaddenScreen.CONTROLLER_SELECT, MaddenScreen.MATCHUP, MaddenScreen.GAME_SETTINGS),
+                delay=1.2,
             )
 
         if screen == MaddenScreen.CONTROLLER_SELECT:
             if not self.controller_side_moved:
-                controller.tap("left", 0.08)
                 self.controller_side_moved = True
-                self.next_action_at = now + 0.55
-                self.current_action = "menu: assign controller side"
-                return self.current_action
-            return self._tap_transition(
+                return self._tap(controller, "right", now, screen, delay=0.50)
+            return self._tap(
                 controller,
-                screen,
                 "cross",
+                now,
+                screen,
                 (MaddenScreen.MATCHUP, MaddenScreen.GAME_SETTINGS, MaddenScreen.COIN_TOSS, MaddenScreen.PLAYCALL),
-                now,
-                "menu: confirm controller",
-                1.15,
+                delay=1.4,
             )
 
-        if screen == MaddenScreen.MATCHUP:
-            return self._tap_transition(
+        if screen in {MaddenScreen.MATCHUP, MaddenScreen.GAME_SETTINGS}:
+            return self._tap(
                 controller,
-                screen,
                 "cross",
+                now,
+                screen,
                 (MaddenScreen.GAME_SETTINGS, MaddenScreen.COIN_TOSS, MaddenScreen.PLAYCALL),
-                now,
-                "menu: advance matchup",
-                1.15,
-            )
-
-        if screen == MaddenScreen.GAME_SETTINGS:
-            return self._tap_transition(
-                controller,
-                screen,
-                "cross",
-                (MaddenScreen.COIN_TOSS, MaddenScreen.PLAYCALL),
-                now,
-                "menu: accept game settings",
-                1.15,
+                delay=1.5,
             )
 
         if screen == MaddenScreen.COIN_TOSS:
-            return self._tap_transition(
+            return self._tap(
                 controller,
-                screen,
                 "cross",
-                (MaddenScreen.PLAYCALL,),
                 now,
-                "menu: accept coin toss choice",
-                1.15,
+                screen,
+                (MaddenScreen.PLAYCALL,),
+                delay=1.2,
             )
 
+        if screen == MaddenScreen.PAUSED:
+            return self._tap(controller, "start", now, screen, delay=1.0)
+
+        if screen == MaddenScreen.FINAL:
+            return self._tap(controller, "cross", now, screen, delay=1.4)
+
         if screen == MaddenScreen.DIALOG:
-            controller.tap("cross", 0.07)
-            self.next_action_at = now + 1.0
-            self.current_action = "menu: confirm known dialog"
-            return self.current_action
+            return self._tap(controller, "cross", now, screen, delay=1.0)
 
         if transition:
-            controller.tap("cross", 0.06)
+            self.current_action = "menu: transition/loading; hold inputs"
             self.next_action_at = now + 1.0
-            self.current_action = "menu: skip transition"
             return self.current_action
 
-        age = now - self.screen_since
-        if self.after_title_start and age >= 1.5:
-            # We saw title, pressed Start, but OCR has not classified the next
-            # screen. One cautious Cross is permitted before reverting to backout.
-            controller.tap("cross", 0.07)
-            self.after_title_start = False
-            self.next_action_at = now + 1.30
-            self.current_action = "menu: post-title cautious confirm"
+        # Unknown menu: never blindly confirm. Wait briefly, then back out.
+        if now - self.screen_since < 2.2:
+            self.current_action = "menu: observing"
+            self.next_action_at = now + 0.65
             return self.current_action
 
-        if self.force_title and age >= 0.70:
-            controller.tap("triangle", 0.07)
-            self.escape_count += 1
-            self.next_action_at = now + 0.90
-            self.current_action = "menu: backing toward title"
-            return self.current_action
-
-        # Critical 24/7 safety rule: never blindly Cross on a long-lived unknown
-        # screen. Back is less destructive than confirming save/delete/mode dialogs.
-        if age >= 5.0:
-            controller.tap("triangle", 0.07)
-            self.force_title = True
-            self.escape_count += 1
-            self.next_action_at = now + 1.0
-            self.current_action = "menu: unknown -> safe backout"
-            return self.current_action
-
-        self.current_action = "menu: observing"
-        self.next_action_at = now + 0.45
-        return self.current_action
+        self.escape_count += 1
+        return self._tap(controller, "triangle", now, screen, delay=1.0)
 
     def request_recovery(self, controller: Controller, level: int, now: float) -> str:
-        self._clear_pending()
-        self.force_title = True
-        self.after_title_start = False
         controller.neutral_sticks()
         if level <= 1:
             controller.tap("triangle", 0.07)
-            action = "menu recovery L1: back one screen"
+            self.current_action = "menu: recovery L1 -> back"
         elif level == 2:
-            controller.tap("triangle", 0.10)
-            action = "menu recovery L2: unwind toward main"
-        else:
             controller.tap("start", 0.08)
-            controller.tap("triangle", 0.08)
-            action = "menu recovery L3: pause/back reset"
-        self.escape_count += 1
+            self.current_action = "menu: recovery L2 -> start probe"
+        else:
+            controller.tap("triangle", 0.07)
+            self.force_title = True
+            self.current_action = "menu: recovery L3 -> force title route"
         self.next_action_at = now + 1.25
-        self.current_action = action
-        return action
+        return self.current_action
 
     def telemetry(self) -> dict:
         pending = self.pending
         return {
             "menu_highlight": None if self.highlight is None else self.highlight.text,
-            "menu_highlight_confidence": 0.0 if self.highlight is None else round(self.highlight.confidence, 2),
+            "menu_highlight_confidence": None if self.highlight is None else round(self.highlight.confidence, 2),
             "menu_pending": None if pending is None else pending.action,
             "menu_expected": [] if pending is None else [screen.value for screen in pending.expected],
             "menu_transaction_retries": self.transaction_retries,
             "menu_transaction_failures": self.transaction_failures,
             "menu_verified_transitions": self.verified_transitions,
+            "menu_escape_count": self.escape_count,
         }
