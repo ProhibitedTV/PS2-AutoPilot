@@ -23,13 +23,19 @@ class Madden2005V5Profile(Madden2005V4Profile):
         self.menu_highlight: MenuHighlight | None = None
         self.runtime_monitor = MaddenRuntimeMonitor(cfg)
         self.last_progress_directive: RuntimeDirective | None = None
+        self.pause_start_attempts = 0
+        self.pause_resume_attempts = 0
 
     def _observe(self, ctx: ProfileContext) -> MaddenObservation:
+        old_phase = self.phase
         obs = super()._observe(ctx)
-        if self.phase in {MaddenPhase.MENU, MaddenPhase.TRANSITION, MaddenPhase.GAME_OVER}:
+        if self.phase in {MaddenPhase.MENU, MaddenPhase.TRANSITION, MaddenPhase.GAME_OVER, MaddenPhase.PAUSED}:
             self.menu_highlight = detect_menu_highlight(ctx.frame, self.last_ocr)
         else:
             self.menu_highlight = None
+        if old_phase == MaddenPhase.PAUSED and self.phase != MaddenPhase.PAUSED:
+            self.pause_start_attempts = 0
+            self.pause_resume_attempts = 0
         return obs
 
     def _menu(self, controller: Controller, obs: MaddenObservation, now: float) -> str:
@@ -42,6 +48,65 @@ class Madden2005V5Profile(Madden2005V4Profile):
             highlight=self.menu_highlight,
         )
 
+    def _paused(self, controller: Controller, now: float) -> str:
+        """Get out of Madden's pause menu without wandering through its options.
+
+        Start is the safest first choice because it toggles pause. If the game is
+        still semantically paused after several attempts, Cross is used as a
+        fallback for the normally highlighted Resume Game row. We never navigate
+        down toward settings/quit while trying to recover.
+        """
+
+        controller.neutral_sticks()
+        if now < self.next_action_at:
+            return self.current_action
+
+        paused_for = max(0.0, now - self.phase_since)
+        if self.pause_start_attempts < 3 or paused_for < 5.0:
+            controller.tap("start", 0.08)
+            self.pause_start_attempts += 1
+            self.next_action_at = now + 1.55
+            self.current_action = f"pause: START resume attempt {self.pause_start_attempts}"
+            return self.current_action
+
+        controller.tap("cross", 0.08)
+        self.pause_resume_attempts += 1
+        self.next_action_at = now + 1.55
+        self.current_action = f"pause: CROSS Resume Game fallback {self.pause_resume_attempts}"
+        return self.current_action
+
+    def _policy_tick(self, controller: Controller, ctx: ProfileContext) -> str:
+        obs = self._observe(ctx)
+
+        queued = self._run_queue(controller, ctx.now)
+        if queued:
+            return queued
+
+        soft_recovery = self._soft_stall_recovery(controller, ctx.now)
+        if soft_recovery:
+            return soft_recovery
+
+        if self.phase == MaddenPhase.PLAYCALL:
+            return self._playcall(controller, ctx.now)
+        if self.phase == MaddenPhase.KICKING:
+            return self._kicking(controller, ctx.now)
+        if self.phase == MaddenPhase.PRE_SNAP:
+            return self._pre_snap(controller, ctx.now)
+        if self.phase == MaddenPhase.LIVE:
+            return self._live(controller, obs, ctx.now)
+        if self.phase == MaddenPhase.POST_PLAY:
+            return self._post_play(controller, ctx.now)
+        if self.phase == MaddenPhase.PAUSED:
+            return self._paused(controller, ctx.now)
+        if self.phase == MaddenPhase.GAME_OVER:
+            controller.neutral_sticks()
+            if ctx.now >= self.next_action_at:
+                controller.tap("cross", 0.08)
+                self.next_action_at = ctx.now + 2.0
+            self.current_action = "final: advance toward post-game"
+            return self.current_action
+        return self._menu(controller, obs, ctx.now)
+
     def _progress_recover(
         self,
         controller: Controller,
@@ -49,7 +114,11 @@ class Madden2005V5Profile(Madden2005V4Profile):
         now: float,
     ) -> str:
         level = directive.level
-        if self.phase in {MaddenPhase.MENU, MaddenPhase.TRANSITION, MaddenPhase.PAUSED, MaddenPhase.GAME_OVER}:
+        if self.phase == MaddenPhase.PAUSED:
+            # Never let the generic menu unwinder scroll around a pause menu.
+            # Retry only the two known-safe resume mechanisms.
+            return self._paused(controller, now)
+        if self.phase in {MaddenPhase.MENU, MaddenPhase.TRANSITION, MaddenPhase.GAME_OVER}:
             return self.menu.request_recovery(controller, level, now)
 
         controller.neutral_sticks()
@@ -75,7 +144,7 @@ class Madden2005V5Profile(Madden2005V4Profile):
         return self.current_action
 
     def tick(self, controller: Controller, ctx: ProfileContext) -> str:
-        action = super().tick(controller, ctx)
+        action = self._policy_tick(controller, ctx)
         state = super().telemetry(ctx)
         state.update(
             {
@@ -99,6 +168,8 @@ class Madden2005V5Profile(Madden2005V4Profile):
         state.update(self.menu.telemetry())
         state.update(self.runtime_monitor.telemetry(ctx.now))
         state["runtime_hours"] = round(max(0.0, ctx.now - self.started_at) / 3600.0, 2)
+        state["pause_start_attempts"] = self.pause_start_attempts
+        state["pause_resume_attempts"] = self.pause_resume_attempts
         if self.last_progress_directive is not None:
             state["progress_recovery_reason"] = self.last_progress_directive.reason
             state["progress_recovery_stalled"] = round(
