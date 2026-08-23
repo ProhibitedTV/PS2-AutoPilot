@@ -50,8 +50,9 @@ observability:
 profile:
   name: jak_and_daxter
 
-  # Calibration mode still fails closed on unknown states. The one exception is an
-  # OCR-verified PRESS START title gate, which may press START with a bounded retry.
+  # Calibration mode still fails closed on unknown states. Two explicit boot gates
+  # are allowed: OCR-verified PRESS START, then the known four-item main menu when
+  # NEW GAME is visually verified as the green selected item.
   mode: observe
   template_threshold: 0.84
   random_seed: 2001
@@ -64,6 +65,9 @@ profile:
   ocr_intra_threads: 2
   ocr_inter_threads: 1
   title_start_retry_seconds: 3.0
+  main_menu_retry_seconds: 3.0
+  new_game_green_ratio_threshold: 0.04
+  new_game_green_margin: 0.012
 
   menu_action_seconds: 1.4
   death_action_seconds: 1.5
