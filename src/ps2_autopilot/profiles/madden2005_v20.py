@@ -164,14 +164,23 @@ class Madden2005V20Profile(Madden2005V19Profile):
 
         return obs
 
+    def _accept_pending_destination(self, screen: MaddenScreen) -> None:
+        pending = self.menu.pending
+        if pending is not None and screen in pending.expected:
+            self.menu.verified_transitions += 1
+            self.menu._clear_pending()
+
     def _rotate_team_select(self, controller: Controller, now: float) -> str:
-        self.menu._seen(MaddenScreen.TEAM_SELECT, now)
+        screen = MaddenScreen.TEAM_SELECT
+        self.menu._seen(screen, now)
+        self._accept_pending_destination(screen)
         controller.neutral_sticks()
         self.queue.clear()
 
-        if self.menu.pending is not None:
-            return super()._menu(controller, self.last_observation, now)
-        if now < self.next_action_at:
+        # Honor the transaction's post-Cross settling delay, but do not hand the
+        # destination back to the base navigator: it would immediately Cross and
+        # bypass rotation on the same tick that verified TEAM SELECT.
+        if now < self.menu.next_action_at or now < self.next_action_at:
             return self.current_action
 
         if self.team_rotation_index < len(self.team_rotation_plan):
@@ -222,7 +231,7 @@ class Madden2005V20Profile(Madden2005V19Profile):
             controller,
             "cross",
             now,
-            MaddenScreen.TEAM_SELECT,
+            screen,
             (MaddenScreen.CONTROLLER_SELECT, MaddenScreen.MATCHUP, MaddenScreen.GAME_SETTINGS),
             delay=1.2,
         )
@@ -237,11 +246,7 @@ class Madden2005V20Profile(Madden2005V19Profile):
     def _controller_side(self, controller: Controller, now: float) -> str:
         screen = MaddenScreen.CONTROLLER_SELECT
         self.menu._seen(screen, now)
-
-        pending = self.menu.pending
-        if pending is not None and screen in pending.expected:
-            self.menu.verified_transitions += 1
-            self.menu._clear_pending()
+        self._accept_pending_destination(screen)
 
         controller.neutral_sticks()
         if now < self.menu.next_action_at or now < self.next_action_at:
