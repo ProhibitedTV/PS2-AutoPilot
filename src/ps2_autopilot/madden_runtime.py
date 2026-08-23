@@ -43,6 +43,7 @@ class MaddenRuntimeMonitor:
         self.unknown_after = float(cfg.get("unknown_capture_seconds", 3.0))
         self.unknown_cooldown = float(cfg.get("unknown_capture_cooldown_seconds", 20.0))
         self.menu_stall_seconds = float(cfg.get("menu_progress_timeout_seconds", 18.0))
+        self.paused_stall_seconds = float(cfg.get("paused_progress_timeout_seconds", 45.0))
         self.playcall_stall_seconds = float(cfg.get("playcall_progress_timeout_seconds", 24.0))
         self.pre_snap_stall_seconds = float(cfg.get("pre_snap_progress_timeout_seconds", 22.0))
         self.post_play_stall_seconds = float(cfg.get("post_play_progress_timeout_seconds", 18.0))
@@ -211,7 +212,12 @@ class MaddenRuntimeMonitor:
             return self.post_play_stall_seconds
         if phase == "game_over" or screen == "final":
             return self.game_over_stall_seconds
-        if phase in {"menu", "transition", "paused"}:
+        if phase == "paused":
+            # Pause recovery intentionally walks a menu conservatively. A longer
+            # budget prevents forensic bundles from firing while the bot is
+            # visibly moving toward RESUME GAME one safe row at a time.
+            return self.paused_stall_seconds
+        if phase in {"menu", "transition"}:
             return self.menu_stall_seconds
         return self.menu_stall_seconds * 1.4
 
