@@ -24,6 +24,15 @@ overlay:
   # OBS does not need a fresh state file for every 12 Hz control tick.
   state_hz: 2.0
 
+# Hard disk guardrails. A fresh run24x7.cmd launch clears the previous session;
+# while the active run continues, historical screenshots/bundles are pruned once
+# per minute and the whole runtime tree is held near this ceiling.
+runtime_retention:
+  max_total_mb: 300
+  max_failure_bundles: 30
+  max_unknown_captures: 60
+  prune_interval_seconds: 60
+
 # Structured logging for long unattended runs. The decision/input logs remain
 # compact while v0.6 also records a full 1-second telemetry snapshot and a focused
 # spatial stream. This stays intentionally verbose even though the public overlay
@@ -40,7 +49,7 @@ observability:
   input_history_size: 300
   max_log_bytes: 8000000
   failure_bundle_cooldown_seconds: 8.0
-  max_failure_bundles: 80
+  max_failure_bundles: 30
   stick_log_interval_seconds: 0.50
   stick_log_delta: 0.08
 
@@ -69,6 +78,12 @@ profile:
   pre_snap_probe_interval_seconds: 1.15
   pre_snap_max_failsafe_probes: 3
   playcall_role_fresh_seconds: 18.0
+
+  # Postgame recognition. Q4 0:00 plus a two-team postgame score panel is treated
+  # as GAME_OVER even when OCR never emits the words FINAL SCORE. Hold the final
+  # presentation for a while before advancing so the broadcast still breathes.
+  final_zero_clock_confirm_seconds: 0.75
+  final_presentation_hold_seconds: 12.0
 
   # v0.5.2 gameplay policy: one deliberate receiver throw after a short read
   # instead of treating X as a harmless "show receiver icons" input.
@@ -113,7 +128,7 @@ profile:
   # normal Madden replays/cutscenes are preserved rather than treated as dead air.
   unknown_capture_seconds: 3.0
   unknown_capture_cooldown_seconds: 20.0
-  max_unknown_captures: 120
+  max_unknown_captures: 60
   max_event_log_bytes: 5000000
   menu_progress_timeout_seconds: 18.0
   paused_progress_timeout_seconds: 45.0

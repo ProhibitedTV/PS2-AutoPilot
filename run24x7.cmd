@@ -13,6 +13,14 @@ if not exist ".venv\Scripts\python.exe" (
 call ".venv\Scripts\activate.bat"
 if errorlevel 1 goto :failed
 
+rem A manually launched runner marks a new stream session. Clear the previous
+rem session's logs/screenshots once here, before the restart loop. Automatic
+rem crash restarts jump back to :run and therefore preserve the current crash
+rem evidence instead of immediately deleting it.
+echo [PS2 AutoPilot] Clearing previous runtime artifacts...
+python -m ps2_autopilot.runtime_retention --root runtime --clear --max-total-mb 300 --max-failures 30 --max-unknown 60
+if errorlevel 1 goto :failed
+
 :run
 if exist "runtime\STOP24X7" goto :stopped
 
