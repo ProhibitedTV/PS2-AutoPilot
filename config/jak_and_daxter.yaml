@@ -140,21 +140,22 @@ profile:
   water_direction_reconsider_seconds: 1.75
   water_direction_flip_margin: 0.10
 
-  # V11 adaptive camera-response ownership. The live bundle repeatedly showed probe
-  # responses around 0.004-0.007 from ~0.001-0.003 idle baselines; the old 0.018 floor
-  # made successful gameplay attachment mathematically impossible in that state.
+  # V11 adaptive camera-response ownership. Across 318 deduplicated probe cycles from
+  # the live bundle, a 0.0036 floor with baseline*1.25+0.0016 accepted about half of
+  # controller-correlated camera pulses; the previous 0.0042 tuning accepted ~26% and
+  # the inherited 0.018 floor accepted none. Repeatability evidence still gates ownership.
   attach_probe_after_seconds: 4.0
   attach_probe_idle_seconds: 0.8
   attach_probe_baseline_max: 0.020
-  attach_probe_response_min: 0.0042
+  attach_probe_response_min: 0.0036
   attach_probe_camera_x: 0.30
   attach_probe_drive_seconds: 0.30
   attach_probe_observe_seconds: 0.80
   attach_probe_retry_seconds: 1.5
   attach_probe_confirmations_required: 2
-  attach_adaptive_min_motion: 0.0042
-  attach_adaptive_delta: 0.0020
-  attach_adaptive_multiplier: 1.30
+  attach_adaptive_min_motion: 0.0036
+  attach_adaptive_delta: 0.0016
+  attach_adaptive_multiplier: 1.25
   attach_evidence_required: 2.0
   attach_evidence_decay: 0.35
   attach_evidence_window_seconds: 14.0
