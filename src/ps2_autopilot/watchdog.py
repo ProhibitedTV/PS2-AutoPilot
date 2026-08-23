@@ -28,6 +28,14 @@ class MotionWatchdog:
         stuck = still >= self.stuck_seconds and now - self.last_recovery_at >= self.cooldown_seconds
         return WatchdogStatus(stuck=stuck, still_seconds=still, recoveries=self.recoveries)
 
+    def mark_safe_still(self) -> None:
+        """A semantic profile verified that a static scene is intentional.
+
+        Reset the raw-motion timer without incrementing recovery counters. This keeps
+        long cutscenes and known static menus from generating fake failure bundles.
+        """
+        self.last_motion_at = time.monotonic()
+
     def mark_recovery(self) -> None:
         self.recoveries += 1
         self.last_recovery_at = time.monotonic()
