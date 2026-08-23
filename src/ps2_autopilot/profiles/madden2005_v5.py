@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from ps2_autopilot.controllers.base import Controller
 from ps2_autopilot.madden_menu import MenuHighlight, detect_menu_highlight
 from ps2_autopilot.madden_runtime import MaddenRuntimeMonitor, RuntimeDirective
@@ -17,6 +19,7 @@ class Madden2005V5Profile(Madden2005V4Profile):
 
     def __init__(self, cfg: dict) -> None:
         super().__init__(cfg)
+        self.started_at = time.monotonic()
         self.menu_highlight: MenuHighlight | None = None
         self.runtime_monitor = MaddenRuntimeMonitor(cfg)
         self.last_progress_directive: RuntimeDirective | None = None
@@ -95,6 +98,7 @@ class Madden2005V5Profile(Madden2005V4Profile):
         state = super().telemetry(ctx)
         state.update(self.menu.telemetry())
         state.update(self.runtime_monitor.telemetry(ctx.now))
+        state["runtime_hours"] = round(max(0.0, ctx.now - self.started_at) / 3600.0, 2)
         if self.last_progress_directive is not None:
             state["progress_recovery_reason"] = self.last_progress_directive.reason
             state["progress_recovery_stalled"] = round(
