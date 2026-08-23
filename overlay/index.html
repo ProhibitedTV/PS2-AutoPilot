@@ -3,90 +3,90 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PS2 AutoPilot</title>
+  <title>Madden NFL 2005 Live</title>
   <style>
-    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}
-    body{font-family:Consolas,"Courier New",monospace;color:#eef8ff}
-    .hud{position:absolute;left:22px;bottom:22px;min-width:520px;max-width:790px;padding:14px 16px;border:1px solid rgba(160,225,255,.7);background:rgba(3,10,18,.80);box-shadow:0 0 24px rgba(90,205,255,.18);clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 18px))}
-    .title{font-size:18px;letter-spacing:3px;font-weight:700;margin-bottom:8px}.row{display:flex;justify-content:space-between;gap:30px;font-size:13px;line-height:1.52}.k{opacity:.62}.v{text-align:right}.strong{font-weight:700}.sep{height:1px;background:rgba(160,225,255,.20);margin:7px 0}.pulse{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:8px;animation:pulse 1s infinite}.ocr{max-width:500px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@keyframes pulse{50%{opacity:.25}}
+    :root{--bg:rgba(6,10,15,.88);--panel:rgba(10,17,24,.84);--line:rgba(255,255,255,.16);--text:#f5f7fa;--muted:#aab6c3;--accent:#67d2ff;--warn:#ffcf5b;--danger:#ff6f6f}
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;color:var(--text);font-family:Arial,Helvetica,sans-serif}
+    #root{position:absolute;inset:0;pointer-events:none}
+    .scorebug{position:absolute;left:28px;bottom:28px;width:620px;border:1px solid var(--line);background:var(--bg);box-shadow:0 10px 35px rgba(0,0,0,.28);border-radius:12px;overflow:hidden}
+    .brand{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;background:rgba(255,255,255,.055);font-size:12px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase}
+    .live{display:flex;align-items:center;gap:7px;color:#fff}.dot{width:7px;height:7px;border-radius:50%;background:#ff4f4f}
+    .main{display:grid;grid-template-columns:1.25fr .95fr;min-height:92px}
+    .match{padding:13px 14px 11px;border-right:1px solid var(--line);min-width:0}
+    .teams{display:flex;align-items:center;gap:10px;font-size:23px;font-weight:900;letter-spacing:.4px}.teams .score{font-size:28px;min-width:30px;text-align:center}.teams .vs{font-size:11px;color:var(--muted);font-weight:700}.team{min-width:54px;text-align:center}
+    .fallback{font-size:20px;font-weight:900;letter-spacing:.5px}.sub{margin-top:8px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .situation{display:flex;flex-direction:column;justify-content:center;padding:11px 14px;gap:7px}.meta{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:800}.clock{font-size:22px;font-variant-numeric:tabular-nums}.pill{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;padding:4px 8px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}.pill.urgent{color:#17120a;background:var(--warn);border-color:transparent;font-weight:900}
+    .down{font-size:18px;font-weight:900;text-transform:uppercase}.down small{font-size:11px;color:var(--muted);font-weight:700;margin-left:8px}
+    .ticker{display:flex;align-items:center;gap:10px;border-top:1px solid var(--line);padding:8px 14px;font-size:12px;min-height:34px}.ticker b{font-size:10px;color:var(--accent);letter-spacing:1.3px;text-transform:uppercase}.ticker span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .chat{position:absolute;right:28px;top:28px;width:390px;height:560px;display:none;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--panel);box-shadow:0 10px 35px rgba(0,0,0,.28);pointer-events:auto}.chat.on{display:block}.chathead{height:38px;display:flex;align-items:center;padding:0 12px;background:rgba(255,255,255,.055);font-size:11px;font-weight:900;letter-spacing:1.3px;text-transform:uppercase}.chat iframe{width:100%;height:calc(100% - 38px);border:0;background:#18181b}
+    .debug{position:absolute;right:28px;bottom:28px;width:520px;display:none;padding:12px 14px;border-radius:10px;border:1px solid rgba(103,210,255,.35);background:rgba(3,8,13,.94);font:12px/1.45 Consolas,"Courier New",monospace;color:#d9edf7}.debug.on{display:block}.drow{display:flex;justify-content:space-between;gap:18px}.dk{color:#7f9bab}.dv{text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:330px}.debug .sep{height:1px;background:rgba(255,255,255,.10);margin:7px 0}
+    .offline{opacity:.58}.hidden{display:none!important}
   </style>
 </head>
 <body>
-  <div class="hud">
-    <div class="title"><span class="pulse"></span>PS2 AUTOPILOT // MADDEN 05 // <span id="version">LIVE</span></div>
-    <div class="row"><span class="k">STATUS</span><span class="v" id="status">BOOTING</span></div>
-    <div class="row"><span class="k">SEMANTIC SCREEN</span><span class="v strong" id="menu_screen">—</span></div>
-    <div class="row"><span class="k">HIGHLIGHT</span><span class="v" id="menu_highlight">—</span></div>
-    <div class="row"><span class="k">MENU TXN</span><span class="v" id="menu_txn">—</span></div>
-    <div class="row"><span class="k">PHASE</span><span class="v strong" id="phase">—</span></div>
-    <div class="row"><span class="k">SITUATION</span><span class="v strong" id="situation">—</span></div>
-    <div class="row"><span class="k">ROLE</span><span class="v strong" id="role">—</span></div>
-    <div class="row"><span class="k">ROLE EVIDENCE</span><span class="v" id="role_evidence">—</span></div>
-    <div class="row"><span class="k">PLAY PLAN</span><span class="v" id="play_intent">—</span></div>
-    <div class="row"><span class="k">LAST EVENT</span><span class="v strong" id="last_event">—</span></div>
-    <div class="row"><span class="k">ACTION</span><span class="v" id="action">—</span></div>
+<div id="root">
+  <section class="scorebug" id="scorebug">
+    <div class="brand"><span>Madden NFL 2005</span><span class="live"><i class="dot"></i><span id="status">LIVE</span></span></div>
+    <div class="main">
+      <div class="match">
+        <div id="scoreline" class="teams hidden"><span class="team" id="teamA">—</span><span class="score" id="scoreA">0</span><span class="vs">vs</span><span class="score" id="scoreB">0</span><span class="team" id="teamB">—</span></div>
+        <div id="fallback" class="fallback">LIVE EXHIBITION</div>
+        <div class="sub" id="gameSub">Classic football, uninterrupted presentation</div>
+      </div>
+      <div class="situation">
+        <div class="meta"><span id="quarter">GAME</span><span class="clock" id="clock">--:--</span><span class="pill" id="playClock">PLAY --</span></div>
+        <div class="down" id="down">LIVE <small id="drive">PLAY 0</small></div>
+      </div>
+    </div>
+    <div class="ticker"><b>On Field</b><span id="ticker">Game in progress</span></div>
+  </section>
+
+  <aside class="chat" id="chat"><div class="chathead">Live Chat</div><iframe id="chatFrame" title="Twitch chat"></iframe></aside>
+
+  <aside class="debug" id="debug">
+    <div class="drow"><span class="dk">PHASE / SCREEN</span><span class="dv" id="dPhase">—</span></div>
+    <div class="drow"><span class="dk">ROLE</span><span class="dv" id="dRole">—</span></div>
+    <div class="drow"><span class="dk">ACTION</span><span class="dv" id="dAction">—</span></div>
+    <div class="drow"><span class="dk">PLAY CLOCK</span><span class="dv" id="dPlayClock">—</span></div>
     <div class="sep"></div>
-    <div class="row"><span class="k">SPATIAL POLICY</span><span class="v strong" id="spatial_policy">—</span></div>
-    <div class="row"><span class="k">PLAYERS / CONTROL</span><span class="v" id="spatial_players">—</span></div>
-    <div class="row"><span class="k">BALL</span><span class="v" id="spatial_ball">—</span></div>
-    <div class="row"><span class="k">ACTION TARGET</span><span class="v" id="spatial_target">—</span></div>
-    <div class="row"><span class="k">OPEN SPACE</span><span class="v" id="spatial_open">—</span></div>
-    <div class="row"><span class="k">SPATIAL CPU / AGE</span><span class="v" id="spatial_perf">—</span></div>
+    <div class="drow"><span class="dk">SPATIAL</span><span class="dv" id="dSpatial">—</span></div>
+    <div class="drow"><span class="dk">OCR / SPATIAL CPU</span><span class="dv" id="dVisionPerf">—</span></div>
+    <div class="drow"><span class="dk">CAPTURE / POLICY</span><span class="dv" id="dPerf">—</span></div>
+    <div class="drow"><span class="dk">LOOP / BUDGET / OVERRUNS</span><span class="dv" id="dLoop">—</span></div>
     <div class="sep"></div>
-    <div class="row"><span class="k">OCR</span><span class="v ocr" id="ocr_text">—</span></div>
-    <div class="row"><span class="k">RAW VISION</span><span class="v" id="game_state">—</span></div>
-    <div class="row"><span class="k">FIELD / TARGET X,Y</span><span class="v" id="tracking">—</span></div>
-    <div class="row"><span class="k">MOTION / PIXEL STILL</span><span class="v" id="motion_line">—</span></div>
-    <div class="row"><span class="k">SEMANTIC STILL / RECOVERY</span><span class="v" id="semantic_line">—</span></div>
-    <div class="row"><span class="k">PLAYS</span><span class="v" id="plays">—</span></div>
-    <div class="row"><span class="k">PASS / TACKLE / KICK</span><span class="v" id="stats">—</span></div>
-    <div class="sep"></div>
-    <div class="row"><span class="k">24/7 GAMES</span><span class="v strong" id="games">—</span></div>
-    <div class="row"><span class="k">MENU VERIFIED / FAIL</span><span class="v" id="menu_verify">—</span></div>
-    <div class="row"><span class="k">UNKNOWN CAPTURES</span><span class="v" id="unknowns">—</span></div>
-    <div class="row"><span class="k">MENU ESCAPES</span><span class="v" id="menu_escapes">—</span></div>
-    <div class="row"><span class="k">MOTION RECOVERIES</span><span class="v" id="recoveries">—</span></div>
-  </div>
+    <div class="drow"><span class="dk">OCR</span><span class="dv" id="dOcr">—</span></div>
+  </aside>
+</div>
 <script>
-const set=(id,v)=>document.getElementById(id).textContent=v ?? '—';
-const f=(v,n=2)=>v==null?'—':Number(v).toFixed(n);
-const pct=v=>`${Math.round(Number(v||0)*100)}%`;
-async function refresh(){
-  try{
-    const r=await fetch('/state.json?_='+Date.now(),{cache:'no-store'});const s=await r.json();
-    set('version',s.version?`v${s.version}`:'LIVE');
-    set('status',(s.status||'UNKNOWN').toUpperCase());
-    set('menu_screen',`${(s.menu_screen||'—').toUpperCase()} ${s.menu_confidence==null?'':Math.round(s.menu_confidence*100)+'%'}`);
-    set('menu_highlight',s.menu_highlight?`${s.menu_highlight} ${Math.round((s.menu_highlight_confidence||0)*100)}%`:'—');
-    set('menu_txn',s.menu_pending?`${s.menu_pending} -> ${(s.menu_expected||[]).join('/')}`:'IDLE');
-    set('phase',`${(s.phase||'—').toUpperCase()} ${s.phase_age==null?'':`(${s.phase_age}s)`}`);
-    set('situation',(s.situation||'UNKNOWN').toUpperCase());
-    set('role',`${(s.possession||'unknown').toUpperCase()}  ${Math.round((s.possession_confidence||0)*100)}%`);
-    set('role_evidence',s.playcall_role_reason||'—');
-    set('play_intent',(s.play_intent||'—').toUpperCase());
-    set('last_event',(s.last_game_event||'none').replaceAll('_',' ').toUpperCase());
-    set('action',s.action);
-    set('spatial_policy',`${(s.spatial_policy_mode||'fallback').toUpperCase()} · ${s.spatial_policy_reason||'—'}`);
-    set('spatial_players',`${s.spatial_players??0} candidates · control ${s.spatial_controlled_confidence?pct(s.spatial_controlled_confidence):'unverified'}`);
-    set('spatial_ball',s.spatial_ball_confidence?`${f(s.spatial_ball_x)}, ${f(s.spatial_ball_y)} · ${pct(s.spatial_ball_confidence)}`:'NO LOCK');
-    set('spatial_target',`${f(s.spatial_target_x)}, ${f(s.spatial_target_y)} · ${pct(s.spatial_target_confidence)}`);
-    set('spatial_open',`${f(s.spatial_open_x)} · ${pct(s.spatial_open_confidence)}`);
-    set('spatial_perf',`${f(s.spatial_processing_ms,1)} ms / ${s.spatial_age==null?'—':f(s.spatial_age,2)+'s'}`);
-    set('ocr_text',s.ocr_text|| (s.ocr_available===false?'OCR OFF':'—'));
-    set('game_state',s.game_state);
-    set('tracking',`${f(s.field_center)} / ${f(s.motion_target)}, ${f(s.motion_target_y)}`);
-    set('motion_line',`${f(s.motion,4)} / ${s.still_seconds==null?'—':s.still_seconds+'s'}`);
-    set('semantic_line',`${s.semantic_still_seconds??0}s / L${s.progress_recovery_level??0}`);
-    set('plays',`${s.plays_completed??0} complete / ${s.plays_started??0} started`);
-    set('stats',`${s.pass_attempts??0} / ${s.tackle_attempts??0} / ${s.kicks??0}`);
-    set('games',`${s.session_games_completed??0} complete / ${s.session_games_started??0} started`);
-    set('menu_verify',`${s.menu_verified_transitions??0} / ${s.menu_transaction_failures??0}  (retry ${s.menu_transaction_retries??0})`);
-    set('unknowns',s.session_unknown_captures??0);
-    set('menu_escapes',s.menu_escapes??0);
-    set('recoveries',s.recoveries);
-  }catch(_){}
-}
-setInterval(refresh,250);refresh();
+(() => {
+  const q=new URLSearchParams(location.search);const debug=q.get('debug')==='1';
+  const chatChannel=(q.get('chat_channel')||'').trim();const chatParent=(q.get('chat_parent')||location.hostname||'localhost').trim();
+  const $=id=>document.getElementById(id);const txt=(id,v)=>{$(id).textContent=(v===null||v===undefined||v==='')?'—':String(v)};
+  const fmtClock=s=>{if(s===null||s===undefined)return'--:--';s=Math.max(0,Number(s)||0);return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`};
+  const labelEvent=v=>String(v||'').replaceAll('_',' ').trim().toUpperCase();
+  $('debug').classList.toggle('on',debug);
+  if(chatChannel){$('chat').classList.add('on');$('chatFrame').src=`https://www.twitch.tv/embed/${encodeURIComponent(chatChannel)}/chat?parent=${encodeURIComponent(chatParent)}&darkpopout`;}
+
+  function update(s){
+    const running=(s.status||'').toLowerCase()==='running';$('scorebug').classList.toggle('offline',!running);txt('status',running?'LIVE':String(s.status||'OFFLINE').toUpperCase());
+    const ta=s.broadcast_team_a,tb=s.broadcast_team_b,sa=s.broadcast_score_a,sb=s.broadcast_score_b;const hasScore=ta&&tb&&sa!==null&&sa!==undefined&&sb!==null&&sb!==undefined;
+    $('scoreline').classList.toggle('hidden',!hasScore);$('fallback').classList.toggle('hidden',!!hasScore);if(hasScore){txt('teamA',ta);txt('teamB',tb);txt('scoreA',sa);txt('scoreB',sb)}
+    const qtr=s.quarter?`Q${s.quarter}`:'GAME';txt('quarter',qtr);txt('clock',fmtClock(s.clock_seconds));
+    const pc=s.play_clock_seconds;const pcEl=$('playClock');txt('playClock',pc===null||pc===undefined?'PLAY --':`PLAY ${pc}`);pcEl.classList.toggle('urgent',!!s.play_clock_urgent);
+    let down='LIVE';if(s.down){down=s.goal_to_go?`${s.down}${['','ST','ND','RD','TH'][s.down]} & GOAL`:`${s.down}${['','ST','ND','RD','TH'][s.down]} & ${s.distance??'?'}`;}txt('down',down);
+    txt('drive',`PLAY ${s.plays_started??0}`);
+    const event=labelEvent(s.last_game_event);const presentation=(s.phase||'')==='post_play';txt('ticker',event&&event!=='NONE'?event:(presentation?'Replay / presentation':'Game in progress'));
+    txt('gameSub',`${s.session_games_completed??0} completed games · ${s.plays_completed??0} plays this session`);
+
+    if(debug){
+      txt('dPhase',`${String(s.phase||'—').toUpperCase()} / ${String(s.menu_screen||'—').toUpperCase()}`);txt('dRole',`${String(s.possession||'unknown').toUpperCase()} ${Math.round((Number(s.possession_confidence)||0)*100)}% · current=${s.current_playcall_role||'—'} fresh=${s.current_playcall_role_fresh?'yes':'no'}`);txt('dAction',s.action);txt('dPlayClock',`${pc??'—'} urgent=${s.play_clock_urgent?'yes':'no'} probes=${s.pre_snap_urgency_probes??0}`);
+      txt('dSpatial',`${s.spatial_policy_mode||'—'} players=${s.spatial_players??0} target=${Math.round((Number(s.spatial_target_confidence)||0)*100)}%`);txt('dVisionPerf',`${Number(s.ocr_processing_ms||0).toFixed(1)}ms / ${Number(s.spatial_processing_ms||0).toFixed(1)}ms`);txt('dPerf',`${Number(s.capture_ms||0).toFixed(1)}ms / ${Number(s.policy_ms||0).toFixed(1)}ms`);txt('dLoop',`${Number(s.last_loop_ms||0).toFixed(1)} / ${Number(s.loop_budget_ms||0).toFixed(1)}ms / ${s.loop_overruns??0}`);txt('dOcr',s.ocr_text||'—');
+    }
+  }
+
+  let busy=false;async function refresh(){if(busy)return;busy=true;try{const r=await fetch(`/state.json?_=${Date.now()}`,{cache:'no-store'});if(r.ok)update(await r.json())}catch(_){ }finally{busy=false}}
+  setInterval(refresh,500);refresh();
+})();
 </script>
 </body>
 </html>
