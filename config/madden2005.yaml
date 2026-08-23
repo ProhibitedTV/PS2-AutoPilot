@@ -61,6 +61,7 @@ profile:
   max_unknown_captures: 120
   max_event_log_bytes: 5000000
   menu_progress_timeout_seconds: 18.0
+  paused_progress_timeout_seconds: 45.0
   playcall_progress_timeout_seconds: 24.0
   pre_snap_progress_timeout_seconds: 22.0
   post_play_progress_timeout_seconds: 18.0
