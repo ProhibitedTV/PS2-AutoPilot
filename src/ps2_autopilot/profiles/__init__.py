@@ -5,8 +5,9 @@ from .madden2005_v6 import Madden2005V6Profile
 from .madden2005_v6_runtime import Madden2005V6RuntimeProfile
 from .madden2005_v7 import Madden2005V7Profile
 from .madden2005_v8 import Madden2005V8Profile
+from .madden2005_v9 import Madden2005V9Profile
 
-Madden2005Profile = Madden2005V8Profile
+Madden2005Profile = Madden2005V9Profile
 
 __all__ = [
     "GenericChaosProfile",
@@ -17,4 +18,5 @@ __all__ = [
     "Madden2005V6RuntimeProfile",
     "Madden2005V7Profile",
     "Madden2005V8Profile",
+    "Madden2005V9Profile",
 ]
