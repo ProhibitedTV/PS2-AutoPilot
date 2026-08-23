@@ -49,9 +49,9 @@ def profile(**extra):
         "attach_probe_drive_seconds": 0.20,
         "attach_probe_observe_seconds": 0.50,
         "attach_probe_retry_seconds": 0.50,
-        "attach_adaptive_min_motion": 0.0042,
-        "attach_adaptive_delta": 0.0020,
-        "attach_adaptive_multiplier": 1.30,
+        "attach_adaptive_min_motion": 0.0036,
+        "attach_adaptive_delta": 0.0016,
+        "attach_adaptive_multiplier": 1.25,
         "attach_evidence_required": 2.0,
         "attach_evidence_decay": 0.35,
         "attach_evidence_window_seconds": 14.0,
@@ -91,10 +91,10 @@ def ctx(frame, now, motion):
 def test_adaptive_threshold_matches_live_probe_scale():
     p = profile()
     p.attach_probe_baseline_motion = 0.0015
-    assert p._adaptive_probe_threshold() == 0.0042
+    assert p._adaptive_probe_threshold() == 0.0036
 
     p.attach_probe_baseline_motion = 0.0030
-    assert abs(p._adaptive_probe_threshold() - 0.0059) < 1e-9
+    assert abs(p._adaptive_probe_threshold() - 0.00535) < 1e-9
 
 
 def test_repeatable_modest_camera_pulses_reacquire_water_gameplay():
@@ -135,8 +135,8 @@ def test_subthreshold_animation_does_not_grant_gameplay():
     assert p._service_attach_probe(c, ctx(frame, 2.0, 0.0015)) is None
     assert "nudge camera" in p._service_attach_probe(c, ctx(frame, 2.5, 0.0015))
     assert "observe response" in p._service_attach_probe(c, ctx(frame, 2.8, 0.0015))
-    assert "waiting" in p._service_attach_probe(c, ctx(frame, 2.9, 0.0035))
-    action = p._service_attach_probe(c, ctx(frame, 3.4, 0.0035))
+    assert "waiting" in p._service_attach_probe(c, ctx(frame, 2.9, 0.0032))
+    action = p._service_attach_probe(c, ctx(frame, 3.4, 0.0032))
 
     assert "inconclusive" in action
     assert p.attach_evidence == 0.0
