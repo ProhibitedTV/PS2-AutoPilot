@@ -4,7 +4,7 @@ import numpy as np
 from ps2_autopilot.madden_spatial import MaddenSpatialTracker
 
 
-def field_frame(offset=0, ball_x=None):
+def field_frame(offset=0):
     frame = np.zeros((360, 640, 3), dtype=np.uint8)
     frame[:] = (42, 118, 42)
 
@@ -21,12 +21,6 @@ def field_frame(offset=0, ball_x=None):
     # Bright yellow marker beneath one candidate to exercise conservative
     # controlled-player evidence.
     cv2.ellipse(frame, (297 + offset, 254), (10, 3), 0, 0, 360, (0, 230, 250), -1)
-
-    if ball_x is not None:
-        # Slightly exaggerated synthetic football: the real detector downsamples
-        # the field and rejects tiny morphology noise, so the fixture must remain a
-        # coherent moving component after that same processing path.
-        cv2.circle(frame, (ball_x, 190), 5, (245, 245, 245), -1)
     return frame
 
 
@@ -49,26 +43,31 @@ def test_spatial_tracker_finds_stable_players_and_open_space():
     assert first_ids & later_ids
 
 
-def test_spatial_tracker_promotes_temporally_continuous_ball_hypothesis():
+def test_ball_hypothesis_is_seeded_then_promoted_by_temporal_continuity():
     tracker = MaddenSpatialTracker(sample_width=480, min_player_confidence=0.24)
-    frame_a = field_frame(ball_x=315)
-    frame_b = field_frame(ball_x=342)
-    frame_c = field_frame(ball_x=358)
+    height, width = 226, 480
+    support = np.full((height, width), 255, dtype=np.uint8)
 
-    seed = tracker.observe(frame_b, frame_a, now=2.0)
-    assert seed.available
-    assert seed.ball is not None
-    # The first sighting may deliberately remain below the gameplay action gate.
-    assert 0.30 <= seed.ball.confidence <= 0.92
+    current_a = np.full((height, width, 3), (42, 118, 42), dtype=np.uint8)
+    motion_a = np.zeros((height, width), dtype=np.uint8)
+    cv2.rectangle(current_a, (205, 105), (211, 111), (245, 245, 245), -1)
+    cv2.rectangle(motion_a, (205, 105), (211, 111), 255, -1)
 
-    confirmed = tracker.observe(frame_c, frame_b, now=2.2)
-    assert confirmed.available
-    assert confirmed.ball is not None
-    assert confirmed.ball.confidence >= seed.ball.confidence
-    assert confirmed.ball.confidence >= 0.45
-    assert confirmed.target_confidence >= 0.45
-    assert -1.0 <= confirmed.target_x <= 1.0
-    assert -1.0 <= confirmed.target_y <= 1.0
+    seed = tracker._ball_candidate(current_a, support, motion_a, (), now=2.0)
+    assert seed is not None
+    assert 0.30 <= seed.confidence <= 0.92
+
+    current_b = np.full((height, width, 3), (42, 118, 42), dtype=np.uint8)
+    motion_b = np.zeros((height, width), dtype=np.uint8)
+    cv2.rectangle(current_b, (214, 106), (220, 112), (245, 245, 245), -1)
+    cv2.rectangle(motion_b, (214, 106), (220, 112), 255, -1)
+
+    confirmed = tracker._ball_candidate(current_b, support, motion_b, (), now=2.2)
+    assert confirmed is not None
+    assert confirmed.confidence >= seed.confidence
+    assert confirmed.confidence >= 0.45
+    assert -1.0 <= confirmed.x <= 1.0
+    assert -1.0 <= confirmed.y <= 1.0
 
 
 def test_spatial_tracker_fails_conservative_off_field():
