@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+import threading
 import time
 from typing import Iterable
 
@@ -40,12 +41,17 @@ class OCRSnapshot:
 
 
 class MaddenOCR:
-    """Low-frequency OCR for Madden menus/HUD.
+    """Low-frequency semantic OCR with a bounded latest-frame worker.
 
-    RapidOCR is loaded lazily so AutoPilot remains usable without OCR installed.
-    Small PCSX2 renders are enlarged, while large 1080p captures are reduced before
-    inference. That preserves readable menu text without asking ONNX Runtime to
-    process the full emulator framebuffer every OCR cycle.
+    The first runtime read remains synchronous. That gives menu/navigation code a
+    trustworthy initial semantic snapshot instead of briefly acting on an empty
+    OCR result. After bootstrap, expensive RapidOCR/ONNX inference runs on one
+    daemon worker and ``read`` immediately returns the newest completed snapshot.
+
+    There is deliberately no unbounded queue. At most one not-yet-started frame is
+    retained; if a newer frame arrives while OCR is busy, it replaces the stale
+    pending frame. PCSX2, OBS and controller policy therefore never wait behind a
+    backlog of screenshots that are already obsolete.
     """
 
     def __init__(
@@ -58,6 +64,8 @@ class MaddenOCR:
         intra_op_num_threads: int = 2,
         inter_op_num_threads: int = 1,
         use_orientation_classifier: bool = False,
+        async_enabled: bool = True,
+        bootstrap_sync: bool = True,
     ) -> None:
         self.interval_seconds = max(0.20, float(interval_seconds))
         self.min_width = max(480, int(min_width))
@@ -67,12 +75,29 @@ class MaddenOCR:
         self.intra_op_num_threads = max(1, int(intra_op_num_threads))
         self.inter_op_num_threads = max(1, int(inter_op_num_threads))
         self.use_orientation_classifier = bool(use_orientation_classifier)
+        self.async_enabled = bool(async_enabled)
+        self.bootstrap_sync = bool(bootstrap_sync)
+
         self._engine = None
         self._engine_error: str | None = None
+        self._engine_lock = threading.Lock()
+
         self._last_at = -1e9
+        self._last_submit_at = -1e9
+        self._last_result_frame_at = -1e9
+        self._last_result_completed_at = -1e9
         self._last = OCRSnapshot((), "", False, "OCR has not run yet")
         self.last_processing_ms = 0.0
         self.runs = 0
+
+        self._condition = threading.Condition()
+        self._pending_frame: np.ndarray | None = None
+        self._pending_frame_at = -1e9
+        self._worker: threading.Thread | None = None
+        self._closed = False
+        self._inflight = False
+        self.submitted_frames = 0
+        self.dropped_frames = 0
 
     @property
     def available(self) -> bool:
@@ -84,24 +109,59 @@ class MaddenOCR:
         self._ensure_engine()
         return self._engine_error
 
+    @property
+    def inflight(self) -> bool:
+        with self._condition:
+            return self._inflight
+
+    def result_age_seconds(self, now: float) -> float | None:
+        with self._condition:
+            frame_at = self._last_result_frame_at
+        if frame_at <= -1e8:
+            return None
+        return max(0.0, now - frame_at)
+
+    def telemetry(self, now: float) -> dict:
+        with self._condition:
+            pending = self._pending_frame is not None
+            inflight = self._inflight
+            submitted = self.submitted_frames
+            dropped = self.dropped_frames
+            completed_at = self._last_result_completed_at
+        age = self.result_age_seconds(now)
+        completion_age = None if completed_at <= -1e8 else max(0.0, now - completed_at)
+        return {
+            "ocr_async_enabled": self.async_enabled,
+            "ocr_inflight": inflight,
+            "ocr_pending": pending,
+            "ocr_result_age_ms": None if age is None else round(age * 1000.0, 1),
+            "ocr_completion_age_ms": (
+                None if completion_age is None else round(completion_age * 1000.0, 1)
+            ),
+            "ocr_submitted_frames": submitted,
+            "ocr_dropped_frames": dropped,
+        }
+
     def _ensure_engine(self) -> None:
         if not self.enabled or self._engine is not None or self._engine_error is not None:
             return
-        if not ORT_PRELOAD.available:
-            self._engine_error = ORT_PRELOAD.error or "ONNX Runtime preload failed"
-            return
-        try:
-            from rapidocr_onnxruntime import RapidOCR
+        with self._engine_lock:
+            if self._engine is not None or self._engine_error is not None:
+                return
+            if not ORT_PRELOAD.available:
+                self._engine_error = ORT_PRELOAD.error or "ONNX Runtime preload failed"
+                return
+            try:
+                from rapidocr_onnxruntime import RapidOCR
 
-            # RapidOCR 1.4.x exposes these ONNX Runtime thread controls directly.
-            # Keeping OCR to a small fixed pool prevents it from briefly consuming
-            # every core that PCSX2/OBS could otherwise use.
-            self._engine = RapidOCR(
-                intra_op_num_threads=self.intra_op_num_threads,
-                inter_op_num_threads=self.inter_op_num_threads,
-            )
-        except Exception as exc:  # optional dependency / runtime provider failure
-            self._engine_error = f"{type(exc).__name__}: {exc}"
+                # Keep OCR to a small fixed pool so it cannot briefly consume every
+                # core that PCSX2/OBS could otherwise use.
+                self._engine = RapidOCR(
+                    intra_op_num_threads=self.intra_op_num_threads,
+                    inter_op_num_threads=self.inter_op_num_threads,
+                )
+            except Exception as exc:  # optional dependency / provider failure
+                self._engine_error = f"{type(exc).__name__}: {exc}"
 
     @staticmethod
     def normalize_text(text: str) -> str:
@@ -140,22 +200,15 @@ class MaddenOCR:
                 interpolation=cv2.INTER_AREA,
             )
 
-        # Local contrast boost helps the red/white Madden menu fonts after the
-        # controlled resize. CLAHE runs on the reduced frame instead of 1080p.
         lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
         l = cv2.createCLAHE(clipLimit=1.8, tileGridSize=(8, 8)).apply(l)
         return cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
 
-    def read(self, frame: np.ndarray, now: float) -> OCRSnapshot:
-        if now - self._last_at < self.interval_seconds:
-            return self._last
-
-        self._last_at = now
+    def _infer(self, frame: np.ndarray) -> tuple[OCRSnapshot, float]:
         self._ensure_engine()
         if self._engine is None:
-            self._last = OCRSnapshot((), "", False, self._engine_error or "OCR disabled")
-            return self._last
+            return OCRSnapshot((), "", False, self._engine_error or "OCR disabled"), 0.0
 
         started = time.perf_counter()
         image = self._prepare(frame)
@@ -163,9 +216,8 @@ class MaddenOCR:
         try:
             result, _ = self._engine(image, use_cls=self.use_orientation_classifier)
         except Exception as exc:
-            self.last_processing_ms = (time.perf_counter() - started) * 1000.0
-            self._last = OCRSnapshot((), "", False, f"{type(exc).__name__}: {exc}")
-            return self._last
+            elapsed = (time.perf_counter() - started) * 1000.0
+            return OCRSnapshot((), "", False, f"{type(exc).__name__}: {exc}"), elapsed
 
         lines: list[OCRLine] = []
         for item in result or []:
@@ -180,7 +232,95 @@ class MaddenOCR:
 
         lines.sort(key=lambda line: (line.y, line.x))
         joined = " | ".join(line.text for line in lines)
-        self.runs += 1
-        self.last_processing_ms = (time.perf_counter() - started) * 1000.0
-        self._last = OCRSnapshot(tuple(lines), joined, True, None)
-        return self._last
+        elapsed = (time.perf_counter() - started) * 1000.0
+        return OCRSnapshot(tuple(lines), joined, True, None), elapsed
+
+    def _publish(self, snapshot: OCRSnapshot, processing_ms: float, frame_at: float) -> None:
+        with self._condition:
+            self._last = snapshot
+            self.last_processing_ms = processing_ms
+            self.runs += 1
+            self._last_result_frame_at = frame_at
+            self._last_result_completed_at = time.monotonic()
+
+    def _start_worker(self) -> None:
+        if not self.async_enabled:
+            return
+        with self._condition:
+            if self._worker is not None:
+                return
+            self._worker = threading.Thread(
+                target=self._worker_main,
+                name="madden-ocr",
+                daemon=True,
+            )
+            self._worker.start()
+
+    def _worker_main(self) -> None:
+        while True:
+            with self._condition:
+                while self._pending_frame is None and not self._closed:
+                    self._condition.wait(timeout=0.5)
+                if self._closed:
+                    return
+                frame = self._pending_frame
+                frame_at = self._pending_frame_at
+                self._pending_frame = None
+                self._pending_frame_at = -1e9
+                self._inflight = True
+
+            assert frame is not None
+            snapshot, processing_ms = self._infer(frame)
+            self._publish(snapshot, processing_ms, frame_at)
+
+            with self._condition:
+                self._inflight = False
+                self._condition.notify_all()
+
+    def _submit_latest(self, frame: np.ndarray, now: float) -> None:
+        self._start_worker()
+        # Copy once at the low OCR cadence so capture buffers can be reused safely.
+        owned = frame.copy()
+        with self._condition:
+            if self._pending_frame is not None:
+                self.dropped_frames += 1
+            self._pending_frame = owned
+            self._pending_frame_at = now
+            self.submitted_frames += 1
+            self._condition.notify()
+        self._last_submit_at = now
+        self._last_at = now
+
+    def read(self, frame: np.ndarray, now: float) -> OCRSnapshot:
+        if not self.enabled:
+            self._last = OCRSnapshot((), "", False, "OCR disabled")
+            return self._last
+
+        # One synchronous bootstrap protects startup/menu navigation from acting on
+        # an empty semantic snapshot. Recurring inference is then fully off-path.
+        if self.runs == 0 and self.bootstrap_sync:
+            snapshot, processing_ms = self._infer(frame)
+            self._publish(snapshot, processing_ms, now)
+            self._last_at = now
+            self._last_submit_at = now
+            self._start_worker()
+            return snapshot
+
+        if not self.async_enabled:
+            if now - self._last_at < self.interval_seconds:
+                return self._last
+            snapshot, processing_ms = self._infer(frame)
+            self._publish(snapshot, processing_ms, now)
+            self._last_at = now
+            return snapshot
+
+        if now - self._last_submit_at >= self.interval_seconds:
+            self._submit_latest(frame, now)
+        with self._condition:
+            return self._last
+
+    def close(self) -> None:
+        with self._condition:
+            self._closed = True
+            self._pending_frame = None
+            self._condition.notify_all()
