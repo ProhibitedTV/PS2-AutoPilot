@@ -1,5 +1,6 @@
 import numpy as np
 
+from ps2_autopilot.jak_knowledge import JakControlMode
 from ps2_autopilot.profiles.base import ProfileContext
 from ps2_autopilot.profiles.jak_and_daxter import JakPhase
 from ps2_autopilot.profiles.jak_and_daxter_v3 import JakAndDaxterV3Profile
@@ -81,7 +82,7 @@ def test_production_gameplay_uses_analog_on_foot_policy():
     controller = FakeController()
     action = p.tick(controller, ctx(template=TemplateMatch("jak_gameplay_geyser", 0.96)))
     assert p.phase == JakPhase.GAMEPLAY
-    assert p.control_mode.value == "on_foot"
+    assert p.control_mode == JakControlMode.ON_FOOT
     assert any(abs(x) > 0 or abs(y) > 0 for x, y in controller.left)
     assert "jak:" in action
 
@@ -146,7 +147,7 @@ def test_watchdog_recovery_is_gameplay_only_and_zoomer_acceleration_is_bounded()
     assert controller.taps == []
 
     p.phase = JakPhase.GAMEPLAY
-    p.control_mode = p.control_mode.ZOOMER
+    p.control_mode = JakControlMode.ZOOMER
     p.recover(controller)
     assert any(action == "cross" for action, _ in controller.taps)
     assert "cross" not in controller.holds
@@ -155,7 +156,9 @@ def test_watchdog_recovery_is_gameplay_only_and_zoomer_acceleration_is_bounded()
 def test_fishing_mode_is_recognized_but_fail_closed_until_detector_exists():
     p = profile()
     controller = FakeController()
-    action = p.tick(controller, ctx(template=TemplateMatch("jak_fishing", 0.96)))
-    assert p.control_mode.value == "fishing"
+    # Special-mode templates retain the gameplay marker so phase ownership remains
+    # explicit while the suffix selects the correct control schema.
+    action = p.tick(controller, ctx(template=TemplateMatch("jak_gameplay_fishing", 0.96)))
+    assert p.control_mode == JakControlMode.FISHING
     assert "await dedicated fish perception" in action
     assert controller.taps == []
