@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from enum import Enum
 import random
+import re
 
 from ps2_autopilot.controllers.base import Controller
+from ps2_autopilot.semantic_ocr import SemanticOCR
 
 from .base import GameProfile, ProfileContext
 
@@ -22,9 +24,12 @@ class JakAndDaxterProfile(GameProfile):
 
     Madden's policy is intentionally not reused here. A 3D platformer needs continuous
     analog locomotion, camera steering, jump timing, hazard/enemy perception and
-    checkpoint recovery rather than football/menu assumptions. The first Jak profile
-    therefore defaults to observation mode and only trusts explicitly calibrated
-    templates. Exploration can be enabled later without changing the application shell.
+    checkpoint recovery rather than football/menu assumptions.
+
+    Observation mode remains fail-closed for uncalibrated game states, with one narrow
+    exception: an OCR-verified ``PRESS START`` title gate may press START. That boot
+    action is explicit, bounded, and safe enough to let unattended calibration proceed
+    past the title screen without turning UNKNOWN into a generic button-mashing state.
     """
 
     name = "jak_and_daxter"
@@ -54,11 +59,35 @@ class JakAndDaxterProfile(GameProfile):
         self.jump_probability = max(0.0, min(0.5, float(cfg.get("jump_probability", 0.08))))
         self.random = random.Random(int(cfg.get("random_seed", 2001)))
 
+        # Shared low-frequency semantic OCR. This is primarily for explicit boot/menu
+        # text gates such as PRESS START; it does not grant generic UNKNOWN states
+        # permission to act.
+        self.ocr = SemanticOCR(
+            interval_seconds=float(cfg.get("ocr_interval_seconds", 0.85)),
+            min_width=int(cfg.get("ocr_min_width", 960)),
+            max_width=int(cfg.get("ocr_max_width", 1280)),
+            min_confidence=float(cfg.get("ocr_min_confidence", 0.42)),
+            enabled=bool(cfg.get("ocr_enabled", True)),
+            intra_op_num_threads=int(cfg.get("ocr_intra_threads", 2)),
+            inter_op_num_threads=int(cfg.get("ocr_inter_threads", 1)),
+            use_orientation_classifier=False,
+            async_enabled=True,
+            bootstrap_sync=True,
+        )
+        self.title_start_retry_seconds = max(
+            1.5, float(cfg.get("title_start_retry_seconds", 3.0))
+        )
+
         self.phase = JakPhase.UNKNOWN
         self.current_action = "jak: boot / awaiting calibrated state"
         self.next_action_at = 0.0
         self.last_template_name: str | None = None
         self.last_template_score = 0.0
+        self.last_ocr_text = ""
+        self.last_ocr_confidence = 0.0
+        self.title_gate_visible = False
+        self.next_title_start_at = 0.0
+        self.title_start_presses = 0
         self.phase_changes = 0
         self.explore_bursts = 0
         self.jump_attempts = 0
@@ -81,18 +110,43 @@ class JakAndDaxterProfile(GameProfile):
             return JakPhase.MENU
         return JakPhase.UNKNOWN
 
-    def _observe_phase(self, ctx: ProfileContext) -> JakPhase:
-        match = ctx.template
-        self.last_template_name = None if match is None else match.name
-        self.last_template_score = 0.0 if match is None else float(match.score)
-        phase = JakPhase.UNKNOWN
-        if match is not None and match.score >= self.template_threshold:
-            phase = self.phase_for_template(match.name)
+    @staticmethod
+    def _compact_text(text: str) -> str:
+        return re.sub(r"[^A-Z0-9]+", "", str(text).upper())
+
+    def _read_ocr_title_gate(self, ctx: ProfileContext) -> bool:
+        snapshot = self.ocr.read(ctx.frame, ctx.now)
+        self.last_ocr_text = snapshot.text
+        self.last_ocr_confidence = snapshot.mean_confidence
+        compact = self._compact_text(snapshot.text)
+        self.title_gate_visible = bool(snapshot.available and "PRESSSTART" in compact)
+        return self.title_gate_visible
+
+    def _set_phase(self, phase: JakPhase) -> JakPhase:
         if phase != self.phase:
             self.phase = phase
             self.phase_changes += 1
             self._neutralized = False
         return phase
+
+    def _observe_phase(self, ctx: ProfileContext) -> JakPhase:
+        match = ctx.template
+        self.last_template_name = None if match is None else match.name
+        self.last_template_score = 0.0 if match is None else float(match.score)
+
+        phase = JakPhase.UNKNOWN
+        if match is not None and match.score >= self.template_threshold:
+            phase = self.phase_for_template(match.name)
+
+        # Only use OCR as a narrow semantic fallback when templates have not already
+        # established a stronger state. PRESS START is a known boot menu, not generic
+        # evidence that Cross/Start should be tried elsewhere.
+        if phase == JakPhase.UNKNOWN and self._read_ocr_title_gate(ctx):
+            phase = JakPhase.MENU
+        elif phase != JakPhase.UNKNOWN:
+            self.title_gate_visible = False
+
+        return self._set_phase(phase)
 
     def _neutral_once(self, controller: Controller) -> None:
         if self._neutralized:
@@ -101,7 +155,21 @@ class JakAndDaxterProfile(GameProfile):
         controller.neutral_sticks()
         self._neutralized = True
 
+    def _title_gate(self, controller: Controller, ctx: ProfileContext) -> str:
+        self._neutral_once(controller)
+        if ctx.now >= self.next_title_start_at:
+            controller.tap("start", 0.08)
+            self.title_start_presses += 1
+            self.next_title_start_at = ctx.now + self.title_start_retry_seconds
+            self.current_action = "jak: OCR verified PRESS START -> START"
+        else:
+            remaining = max(0.0, self.next_title_start_at - ctx.now)
+            self.current_action = f"jak: PRESS START gate; wait {remaining:.1f}s for transition"
+        return self.current_action
+
     def _observe_only(self, controller: Controller, ctx: ProfileContext) -> str:
+        if self.title_gate_visible:
+            return self._title_gate(controller, ctx)
         self._neutral_once(controller)
         template = self.last_template_name or "none"
         self.current_action = (
@@ -138,6 +206,11 @@ class JakAndDaxterProfile(GameProfile):
 
     def tick(self, controller: Controller, ctx: ProfileContext) -> str:
         phase = self._observe_phase(ctx)
+
+        # PRESS START remains safe in both observe/explore modes because it requires
+        # explicit OCR evidence and has its own bounded retry timer.
+        if self.title_gate_visible:
+            return self._title_gate(controller, ctx)
 
         if self.mode == "observe":
             return self._observe_only(controller, ctx)
@@ -180,6 +253,7 @@ class JakAndDaxterProfile(GameProfile):
         return self.current_action
 
     def telemetry(self, ctx: ProfileContext) -> dict:
+        ocr_telemetry = self.ocr.telemetry(ctx.now)
         return {
             "game_phase": self.phase.value,
             "jak_phase": self.phase.value,
@@ -187,9 +261,14 @@ class JakAndDaxterProfile(GameProfile):
             "jak_template": self.last_template_name,
             "jak_template_score": round(self.last_template_score, 3),
             "jak_motion": round(float(ctx.motion), 4),
+            "jak_ocr_text": self.last_ocr_text,
+            "jak_ocr_confidence": round(self.last_ocr_confidence, 3),
+            "jak_title_gate_visible": self.title_gate_visible,
+            "jak_title_start_presses": self.title_start_presses,
             "jak_phase_changes": self.phase_changes,
             "jak_explore_bursts": self.explore_bursts,
             "jak_jump_attempts": self.jump_attempts,
             "jak_menu_confirms": self.menu_confirms,
             "jak_death_confirms": self.death_confirms,
+            **ocr_telemetry,
         }

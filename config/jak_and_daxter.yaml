@@ -50,11 +50,20 @@ observability:
 profile:
   name: jak_and_daxter
 
-  # First run: observe only. Capture representative templates, then explicitly
-  # switch to explore after gameplay/menu/cutscene/death states are calibrated.
+  # Calibration mode still fails closed on unknown states. The one exception is an
+  # OCR-verified PRESS START title gate, which may press START with a bounded retry.
   mode: observe
   template_threshold: 0.84
   random_seed: 2001
+
+  ocr_enabled: true
+  ocr_interval_seconds: 0.85
+  ocr_min_width: 960
+  ocr_max_width: 1280
+  ocr_min_confidence: 0.42
+  ocr_intra_threads: 2
+  ocr_inter_threads: 1
+  title_start_retry_seconds: 3.0
 
   menu_action_seconds: 1.4
   death_action_seconds: 1.5
