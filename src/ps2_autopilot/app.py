@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 import time
 
+import cv2
+
 from .capture import FrameGrabber
 from .config import AppConfig
 from .controllers.keyboard import KeyboardController
@@ -42,6 +44,17 @@ class AutopilotApp:
     def __init__(self, config: AppConfig, project_root: Path) -> None:
         self.config = config
         raw = config.raw
+
+        # PCSX2 and OBS are the important realtime workloads. OpenCV is useful but
+        # should not be allowed to fan out across every logical CPU and create
+        # short inference/vision spikes that steal time from the emulator/encoder.
+        performance_cfg = dict(raw.get("performance", {}))
+        self.opencv_threads = max(1, int(performance_cfg.get("opencv_threads", 2)))
+        cv2.setUseOptimized(True)
+        cv2.setNumThreads(self.opencv_threads)
+        self._last_loop_ms = 0.0
+        self._loop_overruns = 0
+
         self.window = PCSX2Window(config.window_title_contains)
         self.grabber = FrameGrabber(self.window)
 
@@ -99,6 +112,7 @@ class AutopilotApp:
                 port=int(overlay_cfg.get("port", 8765)),
                 root=project_root / "overlay",
                 runtime=runtime_root,
+                state_hz=float(overlay_cfg.get("state_hz", 4.0)),
             )
 
     def _load_savestate(self) -> None:
@@ -119,12 +133,12 @@ class AutopilotApp:
         if self.focus_window:
             self.window.focus()
         if self.overlay:
-            self.overlay.write_state({"status": "starting"})
+            self.overlay.write_state({"status": "starting", "version": package_version()}, force=True)
             self.overlay.start()
 
         print(
             f"PS2 AutoPilot v{package_version()} running profile={self.profile.name}. "
-            "Ctrl+C to stop.",
+            f"Ctrl+C to stop. OpenCV threads={self.opencv_threads}.",
             flush=True,
         )
         if self.verbose_trace.enabled:
@@ -140,7 +154,10 @@ class AutopilotApp:
                 if isinstance(self.controller, TracingController):
                     self.controller.set_decision_id(decision_id)
 
+                capture_started = time.perf_counter()
                 current_frame = self.grabber.grab()
+                capture_ms = (time.perf_counter() - capture_started) * 1000.0
+
                 motion = motion_score(previous, current_frame)
                 previous_for_ctx = previous
                 previous = current_frame
@@ -154,6 +171,7 @@ class AutopilotApp:
                     previous_frame=previous_for_ctx,
                 )
 
+                policy_started = time.perf_counter()
                 watchdog_recovery = False
                 savestate_reload = False
                 if status.stuck:
@@ -167,6 +185,7 @@ class AutopilotApp:
                         action += " -> load savestate"
                 else:
                     action = self.profile.tick(self.controller, ctx)
+                policy_ms = (time.perf_counter() - policy_started) * 1000.0
 
                 state = {
                     "status": "running",
@@ -183,6 +202,14 @@ class AutopilotApp:
                     else {"name": template.name, "score": round(template.score, 3)},
                     "action": action,
                     "timestamp": time.time(),
+                    # Performance values are intentionally kept out of the default
+                    # broadcast HUD but remain available to verbose traces/debug mode.
+                    "capture_ms": round(capture_ms, 2),
+                    "policy_ms": round(policy_ms, 2),
+                    "last_loop_ms": round(self._last_loop_ms, 2),
+                    "loop_budget_ms": round(period * 1000.0, 2),
+                    "loop_overruns": self._loop_overruns,
+                    "opencv_threads": self.opencv_threads,
                 }
                 telemetry = getattr(self.profile, "telemetry", None)
                 if callable(telemetry):
@@ -204,7 +231,10 @@ class AutopilotApp:
                     self.overlay.write_state(state)
 
                 elapsed = time.monotonic() - started
-                if elapsed < period:
+                self._last_loop_ms = elapsed * 1000.0
+                if elapsed > period:
+                    self._loop_overruns += 1
+                else:
                     time.sleep(period - elapsed)
         except KeyboardInterrupt:
             print("Stopping...")
@@ -221,5 +251,7 @@ class AutopilotApp:
         finally:
             self.controller.release_all()
             if self.overlay:
-                self.overlay.write_state({"status": "stopped"})
+                self.overlay.write_state(
+                    {"status": "stopped", "version": package_version()}, force=True
+                )
                 self.overlay.stop()
