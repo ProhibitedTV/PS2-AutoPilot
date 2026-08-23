@@ -57,7 +57,7 @@ class Madden2005V8Profile(Madden2005V7Profile):
         obs = super()._observe(ctx)
         should_sample = (
             self.phase in {MaddenPhase.PRE_SNAP, MaddenPhase.LIVE, MaddenPhase.KICKING}
-            and obs.green_ratio >= max(0.08, self.field_green_threshold * 0.65)
+            and obs.green_ratio >= max(0.08, self.vision.field_green_threshold * 0.65)
             and ctx.now - self.last_spatial_at >= self.spatial_interval_seconds
         )
         if should_sample:
