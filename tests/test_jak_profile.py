@@ -2,6 +2,7 @@ import numpy as np
 
 from ps2_autopilot.profiles.base import ProfileContext
 from ps2_autopilot.profiles.jak_and_daxter import JakAndDaxterProfile, JakPhase
+from ps2_autopilot.semantic_ocr import OCRSnapshot
 from ps2_autopilot.vision import TemplateMatch
 
 
@@ -35,6 +36,17 @@ class FakeController:
         self.set_right_stick(0.0, 0.0)
 
 
+class FakeOCR:
+    def __init__(self, text: str, available: bool = True):
+        self.snapshot = OCRSnapshot((), text, available, None)
+
+    def read(self, frame, now):
+        return self.snapshot
+
+    def telemetry(self, now):
+        return {}
+
+
 def ctx(now=1.0, template=None, motion=0.02):
     return ProfileContext(
         frame=np.zeros((360, 640, 3), dtype=np.uint8),
@@ -50,6 +62,38 @@ def test_observe_mode_never_taps_controller_even_on_gameplay_template():
     controller = FakeController()
     action = profile.tick(controller, ctx(template=TemplateMatch("jak_gameplay", 0.95)))
     assert profile.phase == JakPhase.GAMEPLAY
+    assert controller.taps == []
+    assert "hold inputs" in action
+
+
+def test_observe_mode_can_clear_explicit_press_start_gate():
+    profile = JakAndDaxterProfile(
+        {"mode": "observe", "template_threshold": 0.8, "title_start_retry_seconds": 3.0}
+    )
+    profile.ocr = FakeOCR("JAK AND DAXTER | PRECURSOR LEGACY | PRESS START")
+    controller = FakeController()
+
+    action = profile.tick(controller, ctx(now=1.0, template=None))
+    assert profile.phase == JakPhase.MENU
+    assert profile.title_gate_visible is True
+    assert controller.taps == [("start", 0.08)]
+    assert "PRESS START" in action
+
+    # The same stale/unchanged OCR result cannot create a rapid START loop.
+    profile.tick(controller, ctx(now=2.0, template=None))
+    assert controller.taps == [("start", 0.08)]
+
+    # If the gate genuinely remains visible, a bounded retry is allowed.
+    profile.tick(controller, ctx(now=4.1, template=None))
+    assert [tap[0] for tap in controller.taps] == ["start", "start"]
+
+
+def test_unrelated_unknown_ocr_does_not_gain_controller_ownership():
+    profile = JakAndDaxterProfile({"mode": "observe", "template_threshold": 0.8})
+    profile.ocr = FakeOCR("NAUGHTY DOG PRESENTS")
+    controller = FakeController()
+    action = profile.tick(controller, ctx(template=None))
+    assert profile.phase == JakPhase.UNKNOWN
     assert controller.taps == []
     assert "hold inputs" in action
 
