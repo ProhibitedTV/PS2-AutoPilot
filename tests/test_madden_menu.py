@@ -35,6 +35,15 @@ def test_play_now_main_menu():
     assert classify_madden_screen(s).screen == MaddenScreen.MAIN_MENU
 
 
+def test_live_demo_ocr_is_title():
+    # Exact shape observed from the first clean RapidOCR live run. The final 5
+    # in 2005 was read as S, and the small press-any-button line was missed.
+    s = snap(("DEMO", 0.12), ("MADDENNFL200S", 0.18))
+    result = classify_madden_screen(s)
+    assert result.screen == MaddenScreen.TITLE
+    assert result.confidence >= 0.95
+
+
 def test_parse_down_distance_quarter_clock():
     s = snap(("3RD & 7", 0.08), ("QTR 4", 0.08), ("2:14", 0.08))
     situation = parse_game_situation(s)
