@@ -7,13 +7,13 @@
   <style>
     *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}
     body{font-family:Consolas,"Courier New",monospace;color:#eef8ff}
-    .hud{position:absolute;left:22px;bottom:22px;min-width:500px;max-width:760px;padding:14px 16px;border:1px solid rgba(160,225,255,.7);background:rgba(3,10,18,.80);box-shadow:0 0 24px rgba(90,205,255,.18);clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 18px))}
-    .title{font-size:18px;letter-spacing:3px;font-weight:700;margin-bottom:8px}.row{display:flex;justify-content:space-between;gap:30px;font-size:13px;line-height:1.58}.k{opacity:.62}.v{text-align:right}.strong{font-weight:700}.sep{height:1px;background:rgba(160,225,255,.20);margin:7px 0}.pulse{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:8px;animation:pulse 1s infinite}.ocr{max-width:480px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@keyframes pulse{50%{opacity:.25}}
+    .hud{position:absolute;left:22px;bottom:22px;min-width:520px;max-width:790px;padding:14px 16px;border:1px solid rgba(160,225,255,.7);background:rgba(3,10,18,.80);box-shadow:0 0 24px rgba(90,205,255,.18);clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 18px))}
+    .title{font-size:18px;letter-spacing:3px;font-weight:700;margin-bottom:8px}.row{display:flex;justify-content:space-between;gap:30px;font-size:13px;line-height:1.52}.k{opacity:.62}.v{text-align:right}.strong{font-weight:700}.sep{height:1px;background:rgba(160,225,255,.20);margin:7px 0}.pulse{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:8px;animation:pulse 1s infinite}.ocr{max-width:500px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@keyframes pulse{50%{opacity:.25}}
   </style>
 </head>
 <body>
   <div class="hud">
-    <div class="title"><span class="pulse"></span>PS2 AUTOPILOT // MADDEN 05 // 24H</div>
+    <div class="title"><span class="pulse"></span>PS2 AUTOPILOT // MADDEN 05 // <span id="version">LIVE</span></div>
     <div class="row"><span class="k">STATUS</span><span class="v" id="status">BOOTING</span></div>
     <div class="row"><span class="k">SEMANTIC SCREEN</span><span class="v strong" id="menu_screen">—</span></div>
     <div class="row"><span class="k">HIGHLIGHT</span><span class="v" id="menu_highlight">—</span></div>
@@ -25,6 +25,13 @@
     <div class="row"><span class="k">PLAY PLAN</span><span class="v" id="play_intent">—</span></div>
     <div class="row"><span class="k">LAST EVENT</span><span class="v strong" id="last_event">—</span></div>
     <div class="row"><span class="k">ACTION</span><span class="v" id="action">—</span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="k">SPATIAL POLICY</span><span class="v strong" id="spatial_policy">—</span></div>
+    <div class="row"><span class="k">PLAYERS / CONTROL</span><span class="v" id="spatial_players">—</span></div>
+    <div class="row"><span class="k">BALL</span><span class="v" id="spatial_ball">—</span></div>
+    <div class="row"><span class="k">ACTION TARGET</span><span class="v" id="spatial_target">—</span></div>
+    <div class="row"><span class="k">OPEN SPACE</span><span class="v" id="spatial_open">—</span></div>
+    <div class="row"><span class="k">SPATIAL CPU / AGE</span><span class="v" id="spatial_perf">—</span></div>
     <div class="sep"></div>
     <div class="row"><span class="k">OCR</span><span class="v ocr" id="ocr_text">—</span></div>
     <div class="row"><span class="k">RAW VISION</span><span class="v" id="game_state">—</span></div>
@@ -43,9 +50,11 @@
 <script>
 const set=(id,v)=>document.getElementById(id).textContent=v ?? '—';
 const f=(v,n=2)=>v==null?'—':Number(v).toFixed(n);
+const pct=v=>`${Math.round(Number(v||0)*100)}%`;
 async function refresh(){
   try{
     const r=await fetch('/state.json?_='+Date.now(),{cache:'no-store'});const s=await r.json();
+    set('version',s.version?`v${s.version}`:'LIVE');
     set('status',(s.status||'UNKNOWN').toUpperCase());
     set('menu_screen',`${(s.menu_screen||'—').toUpperCase()} ${s.menu_confidence==null?'':Math.round(s.menu_confidence*100)+'%'}`);
     set('menu_highlight',s.menu_highlight?`${s.menu_highlight} ${Math.round((s.menu_highlight_confidence||0)*100)}%`:'—');
@@ -57,6 +66,12 @@ async function refresh(){
     set('play_intent',(s.play_intent||'—').toUpperCase());
     set('last_event',(s.last_game_event||'none').replaceAll('_',' ').toUpperCase());
     set('action',s.action);
+    set('spatial_policy',`${(s.spatial_policy_mode||'fallback').toUpperCase()} · ${s.spatial_policy_reason||'—'}`);
+    set('spatial_players',`${s.spatial_players??0} candidates · control ${s.spatial_controlled_confidence?pct(s.spatial_controlled_confidence):'unverified'}`);
+    set('spatial_ball',s.spatial_ball_confidence?`${f(s.spatial_ball_x)}, ${f(s.spatial_ball_y)} · ${pct(s.spatial_ball_confidence)}`:'NO LOCK');
+    set('spatial_target',`${f(s.spatial_target_x)}, ${f(s.spatial_target_y)} · ${pct(s.spatial_target_confidence)}`);
+    set('spatial_open',`${f(s.spatial_open_x)} · ${pct(s.spatial_open_confidence)}`);
+    set('spatial_perf',`${f(s.spatial_processing_ms,1)} ms / ${s.spatial_age==null?'—':f(s.spatial_age,2)+'s'}`);
     set('ocr_text',s.ocr_text|| (s.ocr_available===false?'OCR OFF':'—'));
     set('game_state',s.game_state);
     set('tracking',`${f(s.field_center)} / ${f(s.motion_target)}, ${f(s.motion_target_y)}`);
