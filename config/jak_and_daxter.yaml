@@ -50,7 +50,7 @@ profile:
   name: jak_and_daxter
 
   # V4 keeps the production policy from V3 but hardens the boot/menu boundary using
-  # tolerant OCR plus a visual signature for the real lime-green NEW GAME selection.
+  # tolerant OCR plus visual signatures for NEW GAME and safe YES/NO save prompts.
   # Unknown states still fail closed and become calibration evidence.
   mode: production
   template_threshold: 0.84
@@ -79,6 +79,16 @@ profile:
   main_menu_visual_competing_max: 0.035
   main_menu_visual_margin: 0.08
   main_menu_visual_stable_motion: 0.02
+
+  # First-run Jak save creation defaults to NO. Strong OCR must establish a non-
+  # destructive save/create/overwrite prompt before this transaction is allowed.
+  # The lime highlight is checked independently every frame; LEFT targets YES and
+  # CROSS confirms it. Once the save file exists, Jak's normal memory-card writes can
+  # persist campaign progress without relying on emulator savestates.
+  save_choice_green_threshold: 0.06
+  save_choice_green_margin: 0.04
+  save_prompt_select_settle_seconds: 0.30
+  save_prompt_retry_seconds: 4.0
 
   # The opening is presentation-heavy and New Game first enters save-file
   # selection. The timer is only a conservative lower bound; unknown scenes also
