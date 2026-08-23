@@ -17,6 +17,20 @@ overlay:
   host: "127.0.0.1"
   port: 8765
 
+# v0.5.1 structured logs. Discrete button inputs are logged losslessly; analog
+# stick commands are sampled to keep multi-day traces reasonable.
+observability:
+  enabled: true
+  console: true
+  heartbeat_seconds: 5.0
+  history_size: 240
+  input_history_size: 300
+  max_log_bytes: 8000000
+  failure_bundle_cooldown_seconds: 8.0
+  max_failure_bundles: 80
+  stick_log_interval_seconds: 0.50
+  stick_log_delta: 0.08
+
 profile:
   name: madden2005
   template_threshold: 0.84
