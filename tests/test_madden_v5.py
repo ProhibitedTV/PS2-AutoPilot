@@ -127,6 +127,39 @@ def test_pause_cross_only_when_resume_is_verified_highlight():
     assert "verified RESUME GAME" in action
 
 
+def test_pause_resume_cross_enters_transition_grace_and_does_not_double_confirm():
+    profile = Madden2005V5Profile({"ocr_enabled": False})
+    controller = FakeController()
+    profile.pause_start_attempts = 3
+    profile.last_ocr = snapshot(("RESUME GAME", 0.18), ("QUIT/SAVE", 0.82))
+    profile.menu_highlight = MenuHighlight("RESUME GAME", 0.18, 0.8, 0.8)
+    profile.next_action_at = 0.0
+
+    first = profile._paused(controller, now=8.0)
+    assert "wait for transition" in first
+    assert [(kind, action) for kind, action in controller.events if kind == "tap"].count(
+        ("tap", "cross")
+    ) == 1
+
+    controller.events.clear()
+    second = profile._paused(controller, now=9.0)
+    assert "waiting for transition" in second
+    assert not [event for event in controller.events if event[0] == "tap"]
+
+
+def test_pause_holds_inputs_when_overlay_text_has_just_disappeared():
+    profile = Madden2005V5Profile({"ocr_enabled": False})
+    controller = FakeController()
+    profile.pause_start_attempts = 3
+    profile.pause_visible = False
+    profile.pause_last_seen_at = 7.5
+    profile.next_action_at = 0.0
+
+    action = profile._paused(controller, now=8.0)
+    assert "overlay vanished" in action
+    assert not [event for event in controller.events if event[0] == "tap"]
+
+
 def test_pause_never_blindly_confirms_quit_save():
     profile = Madden2005V5Profile({"ocr_enabled": False})
     controller = FakeController()
@@ -183,6 +216,31 @@ def test_semantic_progress_watchdog_requests_recovery(tmp_path):
     now = time.monotonic()
     assert monitor.update(frame, telemetry, "menu: observing", now) is None
     directive = monitor.update(frame, telemetry, "menu: observing", now + 0.2)
+    assert directive is not None
+    assert directive.level == 1
+
+
+def test_paused_phase_has_longer_progress_budget(tmp_path):
+    monitor = MaddenRuntimeMonitor(
+        {
+            "menu_progress_timeout_seconds": 0.1,
+            "paused_progress_timeout_seconds": 1.0,
+            "progress_recovery_cooldown_seconds": 0.1,
+            "unknown_capture_seconds": 999,
+        },
+        runtime_root=tmp_path,
+    )
+    telemetry = {
+        "phase": "paused",
+        "menu_screen": "paused",
+        "plays_started": 1,
+        "plays_completed": 0,
+    }
+    frame = np.zeros((16, 16, 3), dtype=np.uint8)
+    now = time.monotonic()
+    assert monitor.update(frame, telemetry, "pause: seek", now) is None
+    assert monitor.update(frame, telemetry, "pause: seek", now + 0.5) is None
+    directive = monitor.update(frame, telemetry, "pause: seek", now + 1.1)
     assert directive is not None
     assert directive.level == 1
 
