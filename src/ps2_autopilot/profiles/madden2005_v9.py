@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import re
 
 from ps2_autopilot.controllers.base import Controller
@@ -17,6 +18,7 @@ _NFL_TEAMS = {
     "PHI", "PIT", "SD", "SEA", "SF", "STL", "TB", "TEN", "WAS",
 }
 _SCORE_RE = re.compile(r"^\d{1,2}$")
+_BARE_QUARTER_RE = re.compile(r"^[1-4](?:ST|ND|RD|TH)$", re.IGNORECASE)
 
 
 class Madden2005V9Profile(Madden2005V8Profile):
@@ -35,8 +37,6 @@ class Madden2005V9Profile(Madden2005V8Profile):
     def __init__(self, cfg: dict) -> None:
         super().__init__(cfg)
 
-        # Replace the inherited OCR instance with a bounded one. This keeps the
-        # existing semantic pipeline intact while reducing CPU spikes on 1080p.
         self.ocr = MaddenOCR(
             enabled=bool(cfg.get("ocr_enabled", True)),
             interval_seconds=float(cfg.get("ocr_interval_seconds", 0.85)),
@@ -82,8 +82,24 @@ class Madden2005V9Profile(Madden2005V8Profile):
         if new_phase == MaddenPhase.PRE_SNAP:
             self.pre_snap_urgency_probes = 0
 
+    def _quarter_evidence_is_real(self) -> bool:
+        text = self.last_ocr.text.upper()
+        if "QTR" in text or "QUARTER" in text:
+            return True
+        return any(
+            line.y <= 0.25 and _BARE_QUARTER_RE.fullmatch(line.text.strip())
+            for line in self.last_ocr.lines
+        )
+
     def _observe(self, ctx: ProfileContext) -> MaddenObservation:
         obs = super()._observe(ctx)
+
+        # A global bare-ordinal fallback can encounter down text such as
+        # "1ST AND 10". Only keep that quarter when the score bug supplied a
+        # dedicated ordinal/QTR line.
+        if self.situation.quarter is not None and not self._quarter_evidence_is_real():
+            self.situation = replace(self.situation, quarter=None)
+
         if self.phase == MaddenPhase.PLAYCALL and self.possession_confidence >= 0.84:
             reason = str(getattr(self, "playcall_role_reason", ""))
             if reason and reason not in {"none", "ambiguous", "awaiting playcall OCR"}:
@@ -98,10 +114,18 @@ class Madden2005V9Profile(Madden2005V8Profile):
             and now - self.current_playcall_role_at <= self.playcall_role_fresh_seconds
         )
 
+    def _fresh_defense_role(self, now: float) -> bool:
+        return self._fresh_playcall_role(now) and self.current_playcall_role == Possession.DEFENSE
+
     def _safe_snap_switch_probe(self, controller: Controller, now: float, reason: str) -> str:
         controller.neutral_sticks()
         controller.tap("cross", 0.06)
-        self.last_snap_at = now
+
+        # When current-play OCR confidently says DEFENSE, Cross is a player switch,
+        # not evidence that we caused the snap. Avoid poisoning snap-causality
+        # possession inference if the CPU happens to snap immediately afterward.
+        if not self._fresh_defense_role(now):
+            self.last_snap_at = now
         self.snap_attempts += 1
         self.pre_snap_urgency_probes += 1
         self.next_action_at = now + self.pre_snap_probe_interval_seconds
@@ -115,21 +139,26 @@ class Madden2005V9Profile(Madden2005V8Profile):
         idle_for = max(0.0, now - self.phase_since)
         play_clock = self.situation.play_clock_seconds
 
+        # Wait long enough for the first current pre-snap OCR refresh, avoiding a
+        # stale :02 token carried over from the previous presentation frame.
         if (
-            play_clock is not None
+            idle_for >= min(1.0, self.pre_snap_wait)
+            and play_clock is not None
             and play_clock <= self.play_clock_urgent_seconds
             and now >= self.next_action_at
             and self.pre_snap_urgency_probes < self.pre_snap_max_failsafe_probes
         ):
             return self._safe_snap_switch_probe(controller, now, f"play clock {play_clock}s")
 
-        role_is_fresh = self._fresh_playcall_role(now)
         if (
             self.possession == Possession.DEFENSE
             and self.possession_confidence >= 0.62
-            and not (role_is_fresh and self.current_playcall_role == Possession.DEFENSE)
+            and not self._fresh_defense_role(now)
             and idle_for >= self.pre_snap_wait
         ):
+            # Demote stale previous-play evidence. Keep the enum value for history,
+            # but below the threshold the parent policy treats the state as
+            # unconfirmed and emits an early Cross probe instead of waiting 20s.
             self.possession_confidence = min(self.possession_confidence, 0.44)
             self.pre_snap_stale_role_downgrades += 1
 
