@@ -150,8 +150,6 @@ class MaddenSpatialTracker:
             np.array([28, 35, 25], dtype=np.uint8),
             np.array([100, 255, 255], dtype=np.uint8),
         )
-        # Players interrupt the grass mask, so dilating the grass produces a useful
-        # "supported by field" region while excluding most stands/scoreboard clutter.
         support = cv2.dilate(green, np.ones((13, 13), np.uint8), iterations=2)
         return small, hsv, support
 
@@ -168,9 +166,6 @@ class MaddenSpatialTracker:
     @staticmethod
     def _marker_score(hsv: np.ndarray, x: int, y: int, w: int, h: int) -> float:
         hh, ww = hsv.shape[:2]
-        # Madden commonly renders a bright/colorful selection indicator beneath the
-        # controlled player. Only sample a narrow band at/below the candidate feet so
-        # jersey color alone does not become strong control evidence.
         x0 = max(0, x - 3)
         x1 = min(ww, x + w + 3)
         y0 = max(0, y + max(0, h - 3))
@@ -185,7 +180,10 @@ class MaddenSpatialTracker:
         yellow = bright_color & (hue >= 12) & (hue <= 42)
         cyan = bright_color & (hue >= 78) & (hue <= 112)
         hot = bright_color & ((hue <= 8) | (hue >= 168))
-        ratio = float(np.count_nonzero(yellow | cyan | hot) / max(band.shape[0] * band.shape[1], 1))
+        ratio = float(
+            np.count_nonzero(yellow | cyan | hot)
+            / max(band.shape[0] * band.shape[1], 1)
+        )
         return max(0.0, min(1.0, ratio * 3.8))
 
     def _player_candidates(
@@ -201,10 +199,14 @@ class MaddenSpatialTracker:
             np.array([100, 255, 255], dtype=np.uint8),
         )
         foreground = cv2.bitwise_and(cv2.bitwise_not(green), support)
-        foreground = cv2.morphologyEx(foreground, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
-        foreground = cv2.morphologyEx(foreground, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+        foreground = cv2.morphologyEx(
+            foreground, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8)
+        )
+        foreground = cv2.morphologyEx(
+            foreground, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)
+        )
 
-        count, labels, stats, centroids = cv2.connectedComponentsWithStats(foreground, 8)
+        count, _, stats, centroids = cv2.connectedComponentsWithStats(foreground, 8)
         out: list[_RawCandidate] = []
         height, width = foreground.shape
         for idx in range(1, count):
@@ -222,21 +224,27 @@ class MaddenSpatialTracker:
 
             cx, cy = centroids[idx]
             box_motion = motion[y : y + h, x : x + w]
-            motion_score = float(np.count_nonzero(box_motion) / max(box_motion.size, 1))
+            motion_score = float(
+                np.count_nonzero(box_motion) / max(box_motion.size, 1)
+            )
             sat = hsv[y : y + h, x : x + w, 1]
             val = hsv[y : y + h, x : x + w, 2]
             color_score = float(np.mean(sat) / 255.0)
-            dark_score = max(0.0, min(1.0, (165.0 - float(np.mean(val))) / 135.0))
+            dark_score = max(
+                0.0, min(1.0, (165.0 - float(np.mean(val))) / 135.0)
+            )
 
             pad = 5
             ex0, ex1 = max(0, x - pad), min(width, x + w + pad)
             ey0, ey1 = max(0, y - pad), min(height, y + h + pad)
             surround = green[ey0:ey1, ex0:ex1]
-            surround_score = float(np.count_nonzero(surround) / max(surround.size, 1))
+            surround_score = float(
+                np.count_nonzero(surround) / max(surround.size, 1)
+            )
 
-            # A broad size prior works across zoom levels without assuming exact
-            # player dimensions. Yard lines are rejected mostly by width/aspect.
-            size_score = math.exp(-abs(math.log(max(area, 1) / 72.0)) * 0.55)
+            size_score = math.exp(
+                -abs(math.log(max(area, 1) / 72.0)) * 0.55
+            )
             marker = self._marker_score(hsv, x, y, w, h)
             confidence = (
                 0.31 * size_score
@@ -260,11 +268,20 @@ class MaddenSpatialTracker:
                 )
             )
 
-        out.sort(key=lambda c: (c.confidence + c.motion * 0.12 + c.marker * 0.10), reverse=True)
+        out.sort(
+            key=lambda c: c.confidence + c.motion * 0.12 + c.marker * 0.10,
+            reverse=True,
+        )
         return out[: self.max_players]
 
-    def _associate(self, candidates: list[_RawCandidate], now: float) -> tuple[SpatialCandidate, ...]:
-        stale = [tid for tid, track in self._tracks.items() if now - track.last_seen > self.track_ttl_seconds]
+    def _associate(
+        self, candidates: list[_RawCandidate], now: float
+    ) -> tuple[SpatialCandidate, ...]:
+        stale = [
+            tid
+            for tid, track in self._tracks.items()
+            if now - track.last_seen > self.track_ttl_seconds
+        ]
         for tid in stale:
             self._tracks.pop(tid, None)
 
@@ -305,7 +322,10 @@ class MaddenSpatialTracker:
                 track.marker = max(raw.marker, track.marker * 0.72)
                 track.confidence = max(
                     0.0,
-                    min(0.99, raw.confidence + min(0.18, track.hits * 0.018)),
+                    min(
+                        0.99,
+                        raw.confidence + min(0.18, track.hits * 0.018),
+                    ),
                 )
                 track.last_seen = now
                 track.hits += 1
@@ -324,11 +344,18 @@ class MaddenSpatialTracker:
         return tuple(resolved[: self.max_players])
 
     @staticmethod
-    def _controlled_candidate(players: tuple[SpatialCandidate, ...]) -> SpatialCandidate | None:
-        marked = [p for p in players if p.marker >= 0.22 and p.confidence >= 0.42]
+    def _controlled_candidate(
+        players: tuple[SpatialCandidate, ...]
+    ) -> SpatialCandidate | None:
+        marked = [
+            p for p in players if p.marker >= 0.22 and p.confidence >= 0.42
+        ]
         if not marked:
             return None
-        return max(marked, key=lambda p: p.marker * 0.70 + p.confidence * 0.30)
+        return max(
+            marked,
+            key=lambda p: p.marker * 0.70 + p.confidence * 0.30,
+        )
 
     def _ball_candidate(
         self,
@@ -339,7 +366,9 @@ class MaddenSpatialTracker:
         now: float,
     ) -> SpatialCandidate | None:
         moving = cv2.bitwise_and(motion, support)
-        moving = cv2.morphologyEx(moving, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+        moving = cv2.morphologyEx(
+            moving, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8)
+        )
         count, _, stats, centroids = cv2.connectedComponentsWithStats(moving, 8)
         height, width = moving.shape
         gray = cv2.cvtColor(current, cv2.COLOR_BGR2GRAY)
@@ -354,7 +383,9 @@ class MaddenSpatialTracker:
             patch = gray[y : y + h, x : x + w]
             mean_v = float(np.mean(patch) / 255.0) if patch.size else 0.5
             contrast = abs(mean_v - 0.50) * 2.0
-            smallness = math.exp(-abs(math.log(max(area, 1) / 11.0)) * 0.65)
+            smallness = math.exp(
+                -abs(math.log(max(area, 1) / 11.0)) * 0.65
+            )
             continuity = 0.0
             if self._ball is not None:
                 d = math.hypot(nx - self._ball.x, ny - self._ball.y)
@@ -363,11 +394,25 @@ class MaddenSpatialTracker:
                 (math.hypot(nx - p.x, ny - p.y) for p in players),
                 default=0.30,
             )
-            separation = max(0.0, min(1.0, nearest_player / 0.18))
-            score = 0.36 * smallness + 0.25 * contrast + 0.25 * continuity + 0.14 * separation
+            separation = max(
+                0.0, min(1.0, nearest_player / 0.18)
+            )
+            score = (
+                0.36 * smallness
+                + 0.25 * contrast
+                + 0.25 * continuity
+                + 0.14 * separation
+            )
             if self._ball is None:
                 score *= 0.90
-            if score < 0.48:
+
+            # A weak first sighting is allowed to seed a *hypothesis* for telemetry,
+            # but it remains below the gameplay policy's normal >=.50 action gate.
+            # Subsequent samples must supply temporal continuity before the ball can
+            # become steering-grade evidence. This is safer than lowering the policy
+            # threshold just to acquire a first lock.
+            threshold = 0.36 if self._ball is None else 0.40
+            if score < threshold:
                 continue
             candidate = SpatialCandidate(
                 track_id=0,
@@ -384,12 +429,26 @@ class MaddenSpatialTracker:
         if best is not None:
             candidate = best[1]
             if self._ball is None:
-                self._ball = _Track(0, candidate.x, candidate.y, candidate.confidence, candidate.area, 1.0, 0.0, now)
+                self._ball = _Track(
+                    0,
+                    candidate.x,
+                    candidate.y,
+                    candidate.confidence,
+                    candidate.area,
+                    1.0,
+                    0.0,
+                    now,
+                )
             else:
                 alpha = 0.55
                 self._ball.x = self._ball.x * (1.0 - alpha) + candidate.x * alpha
                 self._ball.y = self._ball.y * (1.0 - alpha) + candidate.y * alpha
-                self._ball.confidence = max(candidate.confidence, self._ball.confidence * 0.78)
+                continuity_boost = min(0.12, self._ball.hits * 0.025)
+                self._ball.confidence = max(
+                    candidate.confidence + continuity_boost,
+                    self._ball.confidence * 0.78,
+                )
+                self._ball.confidence = min(0.94, self._ball.confidence)
                 self._ball.area = candidate.area
                 self._ball.last_seen = now
                 self._ball.hits += 1
@@ -414,7 +473,9 @@ class MaddenSpatialTracker:
         )
 
     @staticmethod
-    def _open_space(players: tuple[SpatialCandidate, ...]) -> tuple[float, float]:
+    def _open_space(
+        players: tuple[SpatialCandidate, ...]
+    ) -> tuple[float, float]:
         if len(players) < 3:
             return 0.0, 0.0
         centers = np.linspace(-0.72, 0.72, 9)
@@ -422,24 +483,36 @@ class MaddenSpatialTracker:
         for center in centers:
             occupancy = 0.0
             for p in players:
-                # Lower-screen players matter more to a ballcarrier than distant ones.
                 depth_weight = 0.65 + max(0.0, p.y) * 0.35
-                occupancy += p.confidence * depth_weight * math.exp(-((p.x - center) ** 2) / 0.055)
+                occupancy += (
+                    p.confidence
+                    * depth_weight
+                    * math.exp(-((p.x - center) ** 2) / 0.055)
+                )
             sideline_penalty = abs(float(center)) * 0.42
             costs.append(occupancy + sideline_penalty)
         order = np.argsort(np.asarray(costs))
         best = int(order[0])
         second = int(order[1]) if len(order) > 1 else best
         margin = max(0.0, costs[second] - costs[best])
-        confidence = min(0.90, 0.18 + len(players) * 0.045 + margin * 0.20)
+        confidence = min(
+            0.90, 0.18 + len(players) * 0.045 + margin * 0.20
+        )
         return float(centers[best]), float(confidence)
 
     @staticmethod
-    def _fallback_target(players: tuple[SpatialCandidate, ...]) -> tuple[float, float, float]:
+    def _fallback_target(
+        players: tuple[SpatialCandidate, ...]
+    ) -> tuple[float, float, float]:
         if not players:
             return 0.0, 0.0, 0.0
-        target = max(players, key=lambda p: p.motion * 0.62 + p.confidence * 0.38)
-        confidence = min(0.72, target.confidence * 0.52 + target.motion * 0.30)
+        target = max(
+            players,
+            key=lambda p: p.motion * 0.62 + p.confidence * 0.38,
+        )
+        confidence = min(
+            0.72, target.confidence * 0.52 + target.motion * 0.30
+        )
         return target.x, target.y, confidence
 
     def observe(
@@ -460,18 +533,30 @@ class MaddenSpatialTracker:
                     interpolation=cv2.INTER_AREA,
                 )
             motion = self._motion_mask(previous_small, current)
-            raw_players = self._player_candidates(current, hsv, support, motion)
+            raw_players = self._player_candidates(
+                current, hsv, support, motion
+            )
             players = self._associate(raw_players, now)
             controlled = self._controlled_candidate(players)
-            ball = self._ball_candidate(current, support, motion, players, now)
+            ball = self._ball_candidate(
+                current, support, motion, players, now
+            )
             open_x, open_conf = self._open_space(players)
 
             if ball is not None and ball.confidence >= 0.45:
-                target_x, target_y, target_conf = ball.x, ball.y, ball.confidence
+                target_x, target_y, target_conf = (
+                    ball.x,
+                    ball.y,
+                    ball.confidence,
+                )
                 reason = "ball hypothesis"
             else:
                 target_x, target_y, target_conf = self._fallback_target(players)
-                reason = "player-motion target" if target_conf > 0 else "no stable target"
+                reason = (
+                    "player-motion target"
+                    if target_conf > 0
+                    else "no stable target"
+                )
 
             elapsed_ms = (time.perf_counter() - started) * 1000.0
             return SpatialSnapshot(
