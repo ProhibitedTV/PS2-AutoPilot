@@ -56,9 +56,11 @@ class Madden2005V11Profile(Madden2005V10Profile):
             self.navigation_unknown_suppressed += 1
             self.next_action_at = max(self.next_action_at, now + 0.40)
             if context == "presentation":
-                self.current_action = "presentation: known replay/stats/break context; hold inputs"
+                self.current_action = "presentation: known replay/break context; hold inputs"
             elif context == "playcall":
                 self.current_action = "playcall: known PICK A PLAY context; hold for classifier"
+            elif context == "stats":
+                self.current_action = "stats: recognized stats screen; hold for stats recovery"
             else:
                 self.current_action = "field: known gameplay context; suppress menu recovery"
             return self.current_action
@@ -97,7 +99,9 @@ class Madden2005V11Profile(Madden2005V10Profile):
                 confidence = float(state.get("possession_confidence") or 0.0)
                 state["menu_reason"] = f"active field; {role} {confidence:.0%}"
             elif context == "presentation":
-                state["menu_reason"] = "recognized replay/stats/quarter presentation"
+                state["menu_reason"] = "recognized replay/quarter presentation"
+            elif context == "stats":
+                state["menu_reason"] = "recognized stats submenu/table"
             else:
                 state["menu_reason"] = "recognized playcall context"
         return state
