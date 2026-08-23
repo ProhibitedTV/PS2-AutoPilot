@@ -43,6 +43,18 @@ class Madden2005V13Profile(Madden2005V12Profile):
         )
         return option_hits >= 2
 
+    def _transition_phase(self, new_phase: MaddenPhase, now: float) -> None:
+        old = self.phase
+        super()._transition_phase(new_phase, now)
+        if self.phase == old:
+            return
+        if new_phase == MaddenPhase.GAME_OVER:
+            # No queued kick/pass/menu input may leak into the postgame menu.
+            self.queue.clear()
+            self.postgame_seek_steps = 0
+            self.postgame_confirm_attempts = 0
+            self.postgame_exit_pending_until = -1e9
+
     def _observe(self, ctx: ProfileContext) -> MaddenObservation:
         obs = super()._observe(ctx)
 
@@ -54,9 +66,6 @@ class Madden2005V13Profile(Madden2005V12Profile):
             )
             if self.phase != MaddenPhase.GAME_OVER:
                 self._transition_phase(MaddenPhase.GAME_OVER, ctx.now)
-                self.postgame_seek_steps = 0
-                self.postgame_confirm_attempts = 0
-                self.postgame_exit_pending_until = -1e9
         return obs
 
     def _postgame(self, controller: Controller, now: float) -> str:
@@ -118,9 +127,12 @@ class Madden2005V13Profile(Madden2005V12Profile):
         if queued:
             return queued
 
-        soft_recovery = self._soft_stall_recovery(controller, ctx.now)
-        if soft_recovery and self.phase != MaddenPhase.GAME_OVER:
-            return soft_recovery
+        # Soft-stall recovery can emit controller inputs, so never even call it
+        # after authoritative postgame recognition.
+        if self.phase != MaddenPhase.GAME_OVER:
+            soft_recovery = self._soft_stall_recovery(controller, ctx.now)
+            if soft_recovery:
+                return soft_recovery
 
         if self.phase == MaddenPhase.PLAYCALL:
             return self._playcall(controller, ctx.now)
