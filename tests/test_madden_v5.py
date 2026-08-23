@@ -11,6 +11,7 @@ from ps2_autopilot.madden_menu import (
 )
 from ps2_autopilot.madden_ocr import OCRLine, OCRSnapshot
 from ps2_autopilot.madden_runtime import MaddenRuntimeMonitor
+from ps2_autopilot.profiles.madden2005_v5 import Madden2005V5Profile
 
 
 class FakeController:
@@ -81,6 +82,29 @@ def test_verified_destination_clears_transaction():
         snapshot=snapshot(("PLAY NOW", 0.30)),
     )
     assert nav.verified_transitions == 1
+
+
+def test_pause_ocr_cluster_is_recognized_without_header():
+    assert Madden2005V5Profile.looks_like_pause_text(
+        "RESUME GAME | INSTANT REPLAY | GAME STATS | SETTINGS | QUIT GAME"
+    )
+    assert Madden2005V5Profile.looks_like_pause_text("RESUME | GAME STATS")
+    assert not Madden2005V5Profile.looks_like_pause_text("GAME SETTINGS")
+
+
+def test_pause_recovery_prefers_start_then_cross():
+    profile = Madden2005V5Profile({"ocr_enabled": False})
+    controller = FakeController()
+    profile.phase_since = 1.0
+    profile.next_action_at = 0.0
+    profile._paused(controller, now=2.0)
+    assert ("tap", "start") in controller.events
+
+    profile.pause_start_attempts = 3
+    profile.phase_since = 1.0
+    profile.next_action_at = 0.0
+    profile._paused(controller, now=8.0)
+    assert ("tap", "cross") in controller.events
 
 
 def test_unknown_state_is_captured(tmp_path):
