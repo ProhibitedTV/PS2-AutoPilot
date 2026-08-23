@@ -52,6 +52,14 @@ profile:
   pass_read_min_seconds: 1.10
   pass_read_max_seconds: 2.05
 
+  # v0.5.3 broadcast pacing. Replays, celebrations and presentation shots are
+  # intentionally preserved. The bot only advances an explicit continue prompt
+  # or a presentation that has remained stuck for a long time.
+  presentation_hold_seconds: 8.0
+  event_presentation_hold_seconds: 12.0
+  presentation_stall_nudge_seconds: 30.0
+  presentation_hard_recovery_seconds: 55.0
+
   # Semantic vision. OCR runs slower than the 12 Hz reflex loop.
   ocr_enabled: true
   ocr_interval_seconds: 0.70
@@ -69,6 +77,6 @@ profile:
   paused_progress_timeout_seconds: 45.0
   playcall_progress_timeout_seconds: 24.0
   pre_snap_progress_timeout_seconds: 22.0
-  post_play_progress_timeout_seconds: 18.0
+  post_play_progress_timeout_seconds: 45.0
   game_over_progress_timeout_seconds: 30.0
   progress_recovery_cooldown_seconds: 8.0
