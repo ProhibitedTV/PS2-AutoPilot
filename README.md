@@ -1,59 +1,77 @@
 # PS2 AutoPilot
 
-Windows-first autonomous PCSX2 gameplay framework for unattended livestreams.
+**Windows-first, multi-game PCSX2 automation for unattended gameplay and livestreaming.**
 
-The first real target is **Madden NFL 2005 (PS2)**. AutoPilot captures the active PCSX2 render, reads the game screen, drives a virtual controller, recovers from dead air, and publishes its internal state to an OBS browser overlay.
+PS2 AutoPilot captures the active PCSX2 render, interprets game-specific visual state, drives a virtual controller, records enough evidence to debug unattended failures, and publishes a lightweight state feed for OBS. The shared runtime handles capture, supervision, logging, retention, controller I/O and overlays; each game gets its own perception and policy stack.
 
-## v0.5 — verified menus + 24/7 supervision
+> Current release: **v0.9.1**
 
-v0.5 is focused on surviving unattended operation rather than merely pressing buttons until Madden eventually accepts them.
+## Game status
 
-New in this round:
+| Profile | Game | Current policy | Maturity |
+| --- | --- | --- | --- |
+| `madden2005` | Madden NFL 2005 | `Madden2005V22Profile` | soak-tested |
+| `jak_and_daxter` | Jak and Daxter: The Precursor Legacy | `JakAndDaxterV4Profile` | production-candidate |
+| `generic_chaos` | Generic controller/capture smoke test | generic | diagnostic |
 
-- menu actions are transactional: press -> observe -> verify the expected destination
-- failed menu transitions retry before falling back toward a known-safe screen
-- OCR geometry plus OpenCV are used to estimate the currently highlighted menu row
-- the main menu can move the selection toward `PLAY NOW` instead of assuming it is already highlighted
-- unknown menu screens never blindly confirm after a long timeout; the safe default is to back out
-- unknown states are automatically captured to `runtime/unknown/` with a PNG and matching JSON metadata
-- a semantic-progress watchdog detects when the bot is making no useful progress even if pixels are still moving
-- recovery escalation is separate from the old raw-motion watchdog
-- persistent `runtime/session.json` tracks game starts/completions and recovery counters
-- `runtime/madden-events.jsonl` records state transitions and controller actions for postmortem analysis
-- the OBS HUD shows highlighted row, pending/expected menu transaction, semantic-stall time, verified transitions, failures, unknown captures, and 24/7 game counts
-- pause recovery is explicit: Start is attempted first, then Cross on the normal Resume Game selection if Start does not clear the pause overlay
-- pause detection also recognizes clusters such as `RESUME GAME`, `INSTANT REPLAY`, `GAME STATS`, `SETTINGS`, and `QUIT GAME` when OCR misses the small PAUSE header
-- `run24x7.cmd` restarts AutoPilot after an unexpected process failure while still allowing a clean Ctrl+C shutdown
+Madden and Jak are deliberately isolated. Shared infrastructure is reused; football assumptions never leak into the platformer policy.
 
-The existing gameplay policy remains in place underneath this supervision layer.
-
-## Install / update
-
-Python 3.11 or 3.12 is recommended for the full OCR stack on Windows.
-
-Fresh setup:
+List the profiles available in your checkout:
 
 ```bat
-bootstrap.cmd
+ps2-autopilot --list-profiles
 ```
 
-Existing clone after pulling a new version:
+## Design goals
 
-```bat
-git pull
-bootstrap.cmd
-.venv\Scripts\activate.bat
+PS2 AutoPilot is built around a few rules that matter more than raw button volume:
+
+- **Fail closed on unknown screens.** An unrecognized menu or dialog should produce evidence, not random confirms.
+- **Preserve presentation.** Replays, celebrations, cutscenes and story sequences are part of the stream and should not be skipped just because they are temporarily non-interactive.
+- **Use game-specific semantics.** Madden needs possession, play clocks and menu transactions; Jak needs continuous analog traversal, camera control, scene memory and platforming recovery.
+- **Treat recovery as evidence-driven.** The runtime keeps screenshots, recent decisions and recent inputs around failures so each bad unattended state can become a regression test.
+- **Stay broadcast-friendly.** Public overlays expose useful game state rather than internal bot/debug vocabulary; deeper telemetry remains available separately.
+
+## Architecture
+
+```text
+                           +-----------------------+
+PCSX2 render ------------> | frame capture         |
+                           +-----------+-----------+
+                                       |
+                    +------------------+------------------+
+                    |                                     |
+                    v                                     v
+             shared vision/OCR                    template evidence
+                    |                                     |
+                    +------------------+------------------+
+                                       |
+                                       v
+                              registered game profile
+                         +-------------+-------------+
+                         |                           |
+                    Madden V22                    Jak V4
+                 football state/policy      platformer state/policy
+                         |                           |
+                         +-------------+-------------+
+                                       |
+                                       v
+                               virtual controller
+                                       |
+                                       v
+                                     PCSX2
+
+state + inputs + frames ---> observability / failure bundles / OBS overlay
 ```
 
-`bootstrap.cmd` installs the `full` extra: virtual gamepad plus local OCR.
+## Requirements
 
-Manual equivalent:
+- Windows 10 or 11
+- PCSX2 with your own legally obtained game dump
+- Python **3.11 or 3.12** recommended for the full local OCR stack
+- a virtual Xbox 360 controller through `vgamepad` / ViGEm for the normal Windows setup
 
-```bat
-python -m pip install -e ".[full]"
-```
-
-PCSX2 controller port 1 should map the virtual Xbox 360 controller as follows:
+PCSX2 controller port 1 should map the virtual pad like this:
 
 | Virtual pad | PS2 |
 | --- | --- |
@@ -66,188 +84,233 @@ PCSX2 controller port 1 should map the virtual Xbox 360 controller as follows:
 | Left stick | Left analog |
 | Right stick | Right analog |
 
-## Check the runtime
+## Install / update
 
-Boot PCSX2 with Madden visible and run:
+Fresh checkout:
+
+```bat
+bootstrap.cmd
+```
+
+Existing checkout after pulling a new release:
+
+```bat
+git pull --ff-only
+.venv\Scripts\activate.bat
+python -m pip install -e ".[full]"
+```
+
+Check the installed package version:
+
+```bat
+python -c "from importlib.metadata import version; print(version('ps2-autopilot'))"
+```
+
+## Validate the runtime
+
+For Madden:
 
 ```bat
 ps2-autopilot-doctor --config config\madden2005.yaml
 ```
 
-The doctor checks Windows, the active PCSX2 render window, frame capture, the virtual gamepad backend, calibration templates, the Madden field detector, ONNX Runtime preload, and RapidOCR semantic vision.
+For Jak and Daxter:
 
-## Run it
+```bat
+ps2-autopilot-doctor --config config\jak_and_daxter.yaml
+```
 
-Normal interactive run:
+The doctor checks the Windows runtime, PCSX2 window discovery/capture, controller backend, template namespace and local OCR dependencies relevant to the selected profile.
+
+## Run a game
+
+### Madden NFL 2005
+
+Interactive:
 
 ```bat
 ps2-autopilot --config config\madden2005.yaml
 ```
 
-For an unattended process wrapper:
+Supervised 24/7 wrapper:
 
 ```bat
-run24x7.cmd
+run24x7.cmd config\madden2005.yaml
 ```
 
-A clean `Ctrl+C` stops AutoPilot instead of immediately restarting it. The wrapper only restarts after an unexpected nonzero process exit.
+### Jak and Daxter: The Precursor Legacy
 
-OBS Browser Source:
+Interactive:
+
+```bat
+ps2-autopilot --config config\jak_and_daxter.yaml
+```
+
+Dedicated supervised wrapper:
+
+```bat
+run-jak24x7.cmd
+```
+
+`Ctrl+C` is an intentional clean shutdown. The wrapper only restarts AutoPilot after an unexpected nonzero process exit.
+
+## Jak and Daxter production status
+
+Jak is the second real-game integration and intentionally looks very different from Madden.
+
+### What already works
+
+- OCR-verified **PRESS START** boot transaction
+- main-menu recognition and safe **NEW GAME** confirmation
+- V4 fallback recognition for the real lime-green NEW GAME selection when OCR is incomplete
+- fail-closed unknown menus/save screens
+- continuous on-foot analog exploration and camera steering
+- jump / double-jump behavior and anti-loop scene memory
+- separate control modes for on-foot gameplay, A-Grav Zoomer, Flut Flut, cannon and fishing
+- periodic progress-HUD probes with Power Cell / Precursor Orb / Scout Fly telemetry
+- gameplay-only recovery ladder
+- preservation of unknown presentation/cutscene states instead of generic button mashing
+
+### Current calibration frontier
+
+The boot path is now expected to progress:
 
 ```text
-http://127.0.0.1:8765/
+PRESS START
+   -> MAIN MENU / NEW GAME
+   -> SAVE-FILE SELECTOR        <-- current calibration frontier
+   -> OPENING PRESENTATION
+   -> GEYSER ROCK GAMEPLAY
 ```
 
-The v0.5 HUD exposes information like:
+The save-file selector is intentionally still fail-closed until its exact visual and selection semantics are captured from the live game. After that, the next major work is representative gameplay/cutscene/death calibration, ledge and hazard perception, and longer unattended soaks.
 
-```text
-SEMANTIC SCREEN     MAIN_MENU 96%
-HIGHLIGHT           GAME MODES 71%
-MENU TXN            cross -> team_select/controller_select/matchup
-PHASE               MENU
-ACTION              menu: move up toward PLAY NOW
-SEMANTIC STILL      2.4s / L0
-24/7 GAMES          2 complete / 3 started
-MENU VERIFIED/FAIL  14 / 1
-UNKNOWN CAPTURES    3
-```
+### Jak failure behavior
 
-## Menu policy
+| Failure shape | Current behavior |
+| --- | --- |
+| main menu OCR misses one or more labels | V4 combines partial OCR with normalized lime-highlight geometry |
+| static unknown screen | hold neutral; watchdog/failure evidence remains available for calibration |
+| save/menu words detected after New Game | do **not** promote the frame to gameplay |
+| opening presentation / unknown cinematic | preserve presentation and hold inputs |
+| brief gameplay classifier miss | gameplay grace latch avoids instantly surrendering controller ownership |
+| gameplay stops making progress | bounded Jak-specific recovery ladder |
+| fishing/minigame state lacks dedicated perception | fail closed rather than guessing |
 
-AutoPilot's navigation goal remains deliberately narrow:
+This distinction is important: a screenshot bundle from an unknown screen is not necessarily a crash. Often it is AutoPilot deliberately refusing to invent semantics it has not learned yet.
 
-```text
-TITLE
-  -> PLAY NOW
-  -> TEAM SELECT
-  -> CONTROLLER/SIDE SELECT
-  -> MATCHUP / SETTINGS
-  -> COIN TOSS
-  -> PLAYCALL
-  -> FOOTBALL
-```
+See [`JAK_PRODUCTION.md`](JAK_PRODUCTION.md) and [`GAME_PROFILES.md`](GAME_PROFILES.md) for the detailed Jak policy and profile boundaries.
 
-Known non-goal branches are backed out of rather than explored. For unattended streaming, a conservative reset is better than spending an hour inside Franchise training camp.
+## Madden NFL 2005 status
 
-### Verified transitions
+Madden remains the most mature integration. Its V22 stack includes deterministic menu navigation, team/matchup variety, offense/defense role inference, game-situation OCR, spatial player/ball hypotheses, deliberate passing/running/defense behavior, replay/presentation preservation, postgame lifecycle handling and unattended supervision.
 
-A confirm action is no longer assumed to work. The navigator records the source screen, action, and acceptable destinations, then observes until one is seen.
+The versioned Madden modules remain in the repository so improvements to later games do not erase the working football stack.
 
-```text
-MAIN_MENU
-  action: CROSS
-  expected: TEAM_SELECT / CONTROLLER_SELECT / MATCHUP
-```
+## Runtime evidence and debugging
 
-If the source screen remains visible, the action is retried. If a different unexpected mode appears, the transaction is rejected and the bot backs out.
-
-### Pause safety
-
-Pause menus are special-cased because navigating down them can reach settings or quit-game actions. Recovery therefore uses only:
-
-1. Start to toggle pause off.
-2. Cross as a fallback for the normally highlighted Resume Game option.
-
-It does not wander down the pause menu while trying to recover.
-
-## 24/7 runtime evidence
-
-Runtime artifacts live under the gitignored `runtime/` folder.
+Runtime artifacts are written under the gitignored `runtime/` directory. Depending on the active profile and event type you may see:
 
 ```text
 runtime/
   state.json
   session.json
-  madden-events.jsonl
-  unknown/
-    20260822-183142-acde1234.png
-    20260822-183142-acde1234.json
+  events.jsonl
+  input.jsonl
+  verbose.jsonl
+  spatial.jsonl
+  failures/
+    <timestamp>/
+      frame.png
+      frame-before.png
+      state.json
+      recent-events.json
+      recent-inputs.json
 ```
 
-Unknown captures are perceptually hashed and capped so an unattended stream does not fill the disk with duplicate screenshots.
-
-`session.json` persists coarse lifecycle information such as games started/completed, progress recoveries, hard recoveries, and the last known phase.
-
-`madden-events.jsonl` records transitions, actions, unknown captures, and requested recoveries. The log rotates when it reaches the configured size limit.
-
-## Football policy
-
-### Offense
-
-Before the snap, Cross snaps the ball. On pass plays, the bot keeps the quarterback mostly in the pocket, uses Cross to bring up passing icons, then throws with Cross/Square/Circle/L1/R1. Once the ball is out it tries to take the receiver and make the catch. If the pocket survives too long without a throw, it can throw the ball away.
-
-On runs, the bot attacks upfield and uses sprint, jukes, spin, stiff arms, protect-ball, and occasional dives. Down and distance bias the call: short yardage trends run; long third downs trend pass.
-
-### Defense
-
-The bot switches toward the defender nearest the ball, steers toward the 2D motion centroid, and mixes sprint/shed, dive tackle, play-ball/intercept, strip attempts, rush moves, and Hit Stick attempts.
-
-### Kicking
-
-The kick meter is treated as:
-
-1. Cross — start meter
-2. Cross — stop power
-3. Cross — stop accuracy
-
-The timing remains configurable in `config/madden2005.yaml`.
-
-## Calibration
-
-OCR gives semantic context, while templates remain useful for stable visual states.
+Useful live views:
 
 ```bat
-ps2-autopilot-capture --label playcall_offense --series 5 --interval 0.4
-ps2-autopilot-capture --label pre_snap_offense --series 5 --interval 0.4
-ps2-autopilot-capture --label pre_snap_defense --series 5 --interval 0.4
-ps2-autopilot-capture --label kick_meter --roi 0.20,0.55,0.60,0.40 --series 3
+ps2-autopilot-log --last 80 --follow
+ps2-autopilot-log --inputs --last 80 --follow
+ps2-autopilot-log --verbose --last 60 --follow
+ps2-autopilot-log --spatial --last 80 --follow
 ```
 
-Useful labels include `playcall_offense`, `playcall_defense`, `pre_snap_offense`, `pre_snap_defense`, `post_play`, `kick_meter`, `pause`, and `game_over`. Captured game imagery is gitignored.
+Generate a summary report with:
 
-## Architecture
+```bat
+ps2-autopilot-report
+```
+
+Failure bundles are intentionally self-contained: the frame that triggered recovery, the previous frame, current semantic state, and the recent decision/input window travel together. Runtime retention caps old bundles and unknown captures so unattended operation cannot grow the folder without bound.
+
+## OBS overlay
+
+The built-in state server defaults to:
 
 ```text
-PCSX2
-  |
-  +--> frame capture ------------------------------+
-  |                                                |
-  +--> field/motion CV                             |
-  |                                                v
-  +--> low-rate local OCR ---> semantic screen / situation
-                                                   |
-                         +-------------------------+
-                         v
-                 temporal football state
-                         |
-            +------------+-------------+
-            |                          |
-    verified menu graph            field policy
-            |                          |
-            +------------+-------------+
-                         |
-                    virtual pad
-                         |
-                       PCSX2
-
-semantic state ---> progress watchdog ---> recovery ladder
-       |
-       +--> session/event logs
-       +--> unknown-state captures
-       +--> OBS telemetry
+http://127.0.0.1:8765/
 ```
 
-## Next targets
+The active config chooses the game-specific overlay. Debug-only fields can be viewed with:
 
-1. validate v0.5 against several complete boot-to-game cycles
-2. automate final/post-game screens back into the next Play Now matchup
-3. add PCSX2 process launch/restart and cold-boot recovery
-4. parse score and field position reliably
-5. recognize exact formation/play names and choose better calls
-6. add punt/field-goal/fourth-down logic
-7. add clock management, red-zone policy, and two-minute offense
-8. run 2-hour, 8-hour, and 24-hour unattended soak tests
+```text
+http://127.0.0.1:8765/?debug=1
+```
+
+## Calibration workflow
+
+Templates are useful for stable visual states while OCR and CV provide semantic context. Captured game imagery is gitignored and should not be committed.
+
+Example Jak captures:
+
+```bat
+ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_main_menu --series 3
+ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_save_select --series 5
+ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_gameplay_geyser --series 5
+ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_cutscene --series 5
+ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_death --series 3
+```
+
+Example Madden captures:
+
+```bat
+ps2-autopilot-capture --config config\madden2005.yaml --label playcall_offense --series 5
+ps2-autopilot-capture --config config\madden2005.yaml --label pre_snap_defense --series 5
+ps2-autopilot-capture --config config\madden2005.yaml --label game_over --series 3
+```
+
+## Repository map
+
+```text
+config/                     game/runtime configuration
+overlay/                    OBS browser-source front ends
+profiles/<game>/templates/  local calibration templates (game imagery ignored)
+src/ps2_autopilot/
+  app.py                    shared runtime loop
+  observability.py          events, inputs and failure evidence
+  runtime_retention.py      bounded runtime storage
+  profiles/registry.py      game registry
+  profiles/madden2005_v*.py versioned Madden policies
+  profiles/jak_and_daxter*.py versioned Jak policies
+  jak_perception.py         Jak scene/progress perception
+  jak_knowledge.py          Jak control/progression knowledge
+```
+
+## Roadmap
+
+Near-term work is evidence-driven rather than a fixed feature dump:
+
+1. calibrate Jak's save-file selector and complete unattended boot into Geyser Rock
+2. collect representative Jak gameplay, cutscene, pause, death and checkpoint failure bundles
+3. add traversable-space / ledge / gap perception and better jump timing
+4. add enemy, hazard and collectible perception
+5. calibrate special control modes against real Zoomer / Flut Flut / cannon / fishing footage
+6. complete Jak 2-hour and 8-hour unattended soaks
+7. continue Madden long-soak hardening without regressing its V22 behavior
+8. add additional PS2 games as independent registered profiles
 
 ## Legal / repository hygiene
 
-No BIOS, ROMs, ISOs, emulator binaries, save files, or copyrighted game assets are included. Use your own PCSX2 installation and legally obtained game dump.
+No BIOS, ROMs, ISOs, emulator binaries, save files, credentials, or copyrighted game assets are included in the repository. Use your own PCSX2 installation and legally obtained game dumps. Local screenshots/templates used for calibration are intentionally excluded from source control.
