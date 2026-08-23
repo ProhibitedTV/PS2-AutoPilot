@@ -245,13 +245,8 @@ _DOWN_RE = re.compile(
 )
 _QTR_RE = re.compile(r"\bQ(?:TR|UARTER)?\s*([1-4])\b", re.IGNORECASE)
 _ORDINAL_QTR_RE = re.compile(r"\b([1-4])(?:ST|ND|RD|TH)\s+(?:QTR|QUARTER)\b", re.IGNORECASE)
-# Madden's broadcast score bug often shows a bare ordinal (e.g. "2ND") next to
-# the game clock. `1STAND10` does not match because there is no word boundary.
-_BARE_ORDINAL_QTR_RE = re.compile(r"\b([1-4])(?:ST|ND|RD|TH)\b", re.IGNORECASE)
+_BARE_ORDINAL_QTR_RE = re.compile(r"^([1-4])(?:ST|ND|RD|TH)$", re.IGNORECASE)
 _CLOCK_RE = re.compile(r"\b([0-9]{1,2}):([0-5][0-9])\b")
-# The play clock is commonly rendered as a standalone :15 / :08 / :02 token.
-# Negative lookbehind prevents the seconds half of a normal 2:39 game clock from
-# being mistaken for the play clock.
 _PLAY_CLOCK_RE = re.compile(r"(?<!\d):([0-3]?\d|40)\b")
 
 
@@ -271,9 +266,19 @@ def parse_game_situation(snapshot: OCRSnapshot) -> GameSituation:
         else:
             distance = int(match.group(2))
 
-    qmatch = _QTR_RE.search(text) or _ORDINAL_QTR_RE.search(text) or _BARE_ORDINAL_QTR_RE.search(text)
+    qmatch = _QTR_RE.search(text) or _ORDINAL_QTR_RE.search(text)
     if qmatch:
         quarter = int(qmatch.group(1))
+    else:
+        # Madden often shows a standalone `2ND` score-bug line. Require the
+        # entire OCR line to be the ordinal so `1ST AND 10` cannot become Q1.
+        for line in snapshot.lines:
+            if line.y > 0.25:
+                continue
+            bare = _BARE_ORDINAL_QTR_RE.fullmatch(line.text.strip())
+            if bare:
+                quarter = int(bare.group(1))
+                break
 
     for cmatch in _CLOCK_RE.finditer(text):
         minutes = int(cmatch.group(1))
@@ -284,8 +289,6 @@ def parse_game_situation(snapshot: OCRSnapshot) -> GameSituation:
 
     play_matches = [int(match.group(1)) for match in _PLAY_CLOCK_RE.finditer(text)]
     if play_matches:
-        # There should be only one standalone play-clock token. If OCR duplicates
-        # it, the lowest valid number is the safest urgency signal.
         play_clock_seconds = min(play_matches)
 
     return GameSituation(
@@ -394,12 +397,21 @@ class MaddenMenuNavigator:
             self._begin(screen, action, expected, now)
         return self.current_action
 
-    def _main_menu(self, controller: Controller, assessment: MenuAssessment, now: float, snapshot: OCRSnapshot | None, highlight: MenuHighlight | None) -> str:
+    def _main_menu(
+        self,
+        controller: Controller,
+        assessment: MenuAssessment,
+        now: float,
+        snapshot: OCRSnapshot | None,
+        highlight: MenuHighlight | None,
+    ) -> str:
         if snapshot is not None and highlight is not None:
             play_now = find_ocr_line(snapshot, "PLAY NOW")
             if play_now is not None and "PLAY NOW" not in highlight.text.upper():
                 direction = "down" if play_now.y > highlight.y else "up"
-                return self._tap(controller, direction, now, assessment.screen, delay=0.45)
+                self._tap(controller, direction, now, assessment.screen, delay=0.45)
+                self.current_action = f"menu: move {direction} toward PLAY NOW"
+                return self.current_action
         return self._tap(
             controller,
             "cross",
@@ -448,11 +460,10 @@ class MaddenMenuNavigator:
             return self._tap(controller, "triangle", now, screen, delay=0.75)
 
         if screen == MaddenScreen.DRILL_DIALOG:
-            # Live screenshot showed Cancel highlighted with an X icon. Cross is the
-            # safest way to dismiss this child dialog before backing out of its
-            # Franchise/Training parent.
             self.force_title = True
-            return self._tap(controller, "cross", now, screen, delay=0.85)
+            self._tap(controller, "cross", now, screen, delay=0.85)
+            self.current_action = "menu: cancel drill dialog -> cross"
+            return self.current_action
 
         if screen == MaddenScreen.TEAM_SELECT:
             return self._tap(
@@ -511,7 +522,6 @@ class MaddenMenuNavigator:
             self.next_action_at = now + 1.0
             return self.current_action
 
-        # Unknown menu: never blindly confirm. Wait briefly, then back out.
         if now - self.screen_since < 2.2:
             self.current_action = "menu: observing"
             self.next_action_at = now + 0.65
