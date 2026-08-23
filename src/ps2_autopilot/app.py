@@ -11,8 +11,8 @@ from .controllers.keyboard import KeyboardController
 from .controllers.virtual_gamepad import VirtualGamepadController
 from .observability import RuntimeObserver, TracingController
 from .overlay import OverlayServer
-from .profiles import GenericChaosProfile, Madden2005Profile
 from .profiles.base import ProfileContext
+from .profiles.registry import build_profile, get_profile_spec
 from .runtime_retention import RuntimeRetention
 from .runtime_version import package_version
 from .verbose_trace import VerboseRuntimeTrace
@@ -46,9 +46,6 @@ class AutopilotApp:
         self.config = config
         raw = config.raw
 
-        # PCSX2 and OBS are the important realtime workloads. OpenCV is useful but
-        # should not be allowed to fan out across every logical CPU and create
-        # short inference/vision spikes that steal time from the emulator/encoder.
         performance_cfg = dict(raw.get("performance", {}))
         self.opencv_threads = max(1, int(performance_cfg.get("opencv_threads", 2)))
         cv2.setUseOptimized(True)
@@ -103,16 +100,14 @@ class AutopilotApp:
         self.reload_after = int(wd.get("reload_savestate_after_recoveries", 3))
         self.load_state_key = str(wd.get("load_state_key", "f3"))
 
-        profile_cfg = raw.get("profile", {})
-        name = str(profile_cfg.get("name", "generic_chaos"))
-        if name == "generic_chaos":
-            self.profile = GenericChaosProfile(float(profile_cfg.get("action_seconds", 1.25)))
-        elif name == "madden2005":
-            self.profile = Madden2005Profile(dict(profile_cfg))
-        else:
-            raise RuntimeError(f"Unknown profile: {name}")
+        profile_cfg = dict(raw.get("profile", {}))
+        requested_name = str(profile_cfg.get("name", "generic_chaos"))
+        self.profile_spec = get_profile_spec(requested_name)
+        self.profile = build_profile(profile_cfg)
+        self.detector = TemplateDetector(
+            project_root / "profiles" / self.profile_spec.template_namespace / "templates"
+        )
 
-        self.detector = TemplateDetector(project_root / "profiles" / name / "templates")
         self.overlay: OverlayServer | None = None
         overlay_cfg = raw.get("overlay", {})
         if overlay_cfg.get("enabled", True):
@@ -122,6 +117,7 @@ class AutopilotApp:
                 root=project_root / "overlay",
                 runtime=runtime_root,
                 state_hz=float(overlay_cfg.get("state_hz", 4.0)),
+                index_file=str(overlay_cfg.get("index_file", "index.html")),
             )
 
     def _load_savestate(self) -> None:
@@ -129,6 +125,15 @@ class AutopilotApp:
 
         self.controller.release_all()
         pydirectinput.press(self.load_state_key)
+
+    def _identity_state(self) -> dict:
+        return {
+            "version": package_version(),
+            "profile": self.profile.name,
+            "game_id": self.profile_spec.name,
+            "game_display_name": self.profile_spec.display_name,
+            "profile_maturity": self.profile_spec.maturity,
+        }
 
     def run(self) -> None:
         period = 1.0 / max(self.config.loop_hz, 1.0)
@@ -142,12 +147,16 @@ class AutopilotApp:
         if self.focus_window:
             self.window.focus()
         if self.overlay:
-            self.overlay.write_state({"status": "starting", "version": package_version()}, force=True)
+            self.overlay.write_state(
+                {"status": "starting", **self._identity_state()}, force=True
+            )
             self.overlay.start()
 
         print(
-            f"PS2 AutoPilot v{package_version()} running profile={self.profile.name}. "
-            f"Ctrl+C to stop. OpenCV threads={self.opencv_threads}.",
+            f"PS2 AutoPilot v{package_version()} running "
+            f"game={self.profile_spec.display_name} profile={self.profile.name} "
+            f"maturity={self.profile_spec.maturity}. Ctrl+C to stop. "
+            f"OpenCV threads={self.opencv_threads}.",
             flush=True,
         )
         if self.verbose_trace.enabled:
@@ -198,8 +207,7 @@ class AutopilotApp:
 
                 state = {
                     "status": "running",
-                    "version": package_version(),
-                    "profile": self.profile.name,
+                    **self._identity_state(),
                     "decision_id": decision_id,
                     "motion": round(motion, 4),
                     "still_seconds": round(status.still_seconds, 1),
@@ -211,8 +219,6 @@ class AutopilotApp:
                     else {"name": template.name, "score": round(template.score, 3)},
                     "action": action,
                     "timestamp": time.time(),
-                    # Performance values are intentionally kept out of the default
-                    # broadcast HUD but remain available to verbose traces/debug mode.
                     "capture_ms": round(capture_ms, 2),
                     "policy_ms": round(policy_ms, 2),
                     "last_loop_ms": round(self._last_loop_ms, 2),
@@ -268,6 +274,6 @@ class AutopilotApp:
             self.controller.release_all()
             if self.overlay:
                 self.overlay.write_state(
-                    {"status": "stopped", "version": package_version()}, force=True
+                    {"status": "stopped", **self._identity_state()}, force=True
                 )
                 self.overlay.stop()

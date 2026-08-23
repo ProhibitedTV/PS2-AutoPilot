@@ -5,13 +5,12 @@ import platform
 from pathlib import Path
 import time
 
-# Preload ORT before importing capture/OpenCV-heavy modules. Some Windows
-# Conda-derived environments otherwise hit DLL initialization failures.
 from .ort_preload import PRELOAD as ORT_PRELOAD
 from .capture import FrameGrabber
 from .config import load_config
 from .madden_ocr import MaddenOCR
 from .madden_vision import MaddenVision
+from .profiles.registry import get_profile_spec
 from .vision import TemplateDetector
 from .window import PCSX2Window
 
@@ -57,21 +56,27 @@ def main() -> None:
     if backend == "virtual_gamepad":
         try:
             import vgamepad  # noqa: F401
-
             report(True, "vgamepad / ViGEm backend")
         except Exception as exc:
             report(False, "vgamepad / ViGEm backend", str(exc))
     else:
         report(True, "controller backend", backend)
 
-    profile_cfg = raw.get("profile", {})
+    profile_cfg = dict(raw.get("profile", {}))
     profile_name = str(profile_cfg.get("name", "generic_chaos"))
-    root = Path(__file__).resolve().parents[2]
-    template_dir = root / "profiles" / profile_name / "templates"
-    detector = TemplateDetector(template_dir)
-    report(True, "calibration templates", f"{len(detector.templates)} loaded")
+    try:
+        spec = get_profile_spec(profile_name)
+        report(True, "registered game profile", f"{spec.display_name} ({spec.maturity})")
+    except ValueError as exc:
+        report(False, "registered game profile", str(exc))
+        raise SystemExit(1) from exc
 
-    if profile_name == "madden2005":
+    root = Path(__file__).resolve().parents[2]
+    template_dir = root / "profiles" / spec.template_namespace / "templates"
+    detector = TemplateDetector(template_dir)
+    report(True, "calibration templates", f"{len(detector.templates)} loaded from {spec.template_namespace}")
+
+    if spec.name == "madden2005":
         vision = MaddenVision(
             field_green_threshold=float(profile_cfg.get("field_green_threshold", 0.20)),
             live_motion_threshold=float(profile_cfg.get("live_motion_threshold", 0.020)),
@@ -85,9 +90,6 @@ def main() -> None:
         else:
             report(False, "ONNX Runtime preload", ORT_PRELOAD.error or "unknown failure")
             print("      Windows fix: install/repair Microsoft Visual C++ 2015-2022 Redistributable (x64).")
-            print("      winget install -e --id Microsoft.VCRedist.2015+.x64")
-            print("      If this venv was created from Anaconda and the DLL error persists,")
-            print("      rebuild .venv from a standalone python.org Python 3.11+ interpreter.")
 
         ocr = MaddenOCR(
             enabled=bool(profile_cfg.get("ocr_enabled", True)),
@@ -100,11 +102,12 @@ def main() -> None:
             preview = snapshot.text[:110] if snapshot.text else "(no readable text on current frame)"
             report(True, "RapidOCR semantic vision", preview)
         else:
-            report(
-                False,
-                "RapidOCR semantic vision",
-                snapshot.error or "install with: pip install -e \".[full]\"",
-            )
+            report(False, "RapidOCR semantic vision", snapshot.error or "install full extras")
+    elif spec.name == "jak_and_daxter":
+        mode = str(profile_cfg.get("mode", "observe"))
+        report(True, "Jak safety mode", f"{mode}; uncalibrated states hold inputs")
+        if not detector.templates:
+            print("[INFO] Jak has no local templates yet; observation mode is expected for first calibration.")
 
     if failures:
         print(f"\nDoctor found {failures} blocking issue(s).")

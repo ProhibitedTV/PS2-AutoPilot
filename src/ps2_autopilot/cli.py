@@ -3,12 +3,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-# Windows native-extension load order matters on some Conda-derived Python
-# installations. Give ONNX Runtime first crack at its DLLs before OpenCV and
-# other native packages are imported by the gameplay stack.
 from .ort_preload import PRELOAD as _ORT_PRELOAD  # noqa: F401
 from .app import AutopilotApp
 from .config import load_config
+from .profiles.registry import list_profile_specs
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,11 +16,20 @@ def build_parser() -> argparse.ArgumentParser:
         default="config/madden2005.yaml",
         help="Path to YAML config (default: config/madden2005.yaml)",
     )
+    parser.add_argument(
+        "--list-profiles",
+        action="store_true",
+        help="List registered game profiles and exit",
+    )
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
+    if args.list_profiles:
+        for spec in list_profile_specs():
+            print(f"{spec.name:18} {spec.maturity:12} {spec.display_name}")
+        return
     project_root = Path.cwd()
     cfg = load_config(args.config)
     AutopilotApp(cfg, project_root).run()

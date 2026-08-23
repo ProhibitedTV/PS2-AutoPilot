@@ -1,0 +1,66 @@
+window_title_contains: "PCSX2"
+loop_hz: 12
+
+performance:
+  opencv_threads: 2
+
+controller:
+  backend: virtual_gamepad
+  focus_window: true
+
+# Jak's first pass is calibration-oriented. The profile overrides recover() so a
+# static cutscene/menu never inherits Madden/generic recovery inputs. Savestate
+# reloads are effectively disabled until checkpoint/death recovery is calibrated.
+watchdog:
+  motion_threshold: 0.006
+  stuck_seconds: 35
+  recovery_cooldown_seconds: 12
+  reload_savestate_after_recoveries: 999999
+  load_state_key: "f3"
+
+overlay:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8765
+  state_hz: 2.0
+  index_file: "jak.html"
+
+runtime_retention:
+  max_total_mb: 300
+  max_failure_bundles: 30
+  max_unknown_captures: 60
+  prune_interval_seconds: 60
+
+observability:
+  enabled: true
+  console: true
+  verbose_console: true
+  heartbeat_seconds: 5.0
+  verbose_log_seconds: 1.0
+  spatial_log_seconds: 0.75
+  spatial_console_seconds: 2.0
+  history_size: 240
+  input_history_size: 300
+  max_log_bytes: 8000000
+  failure_bundle_cooldown_seconds: 8.0
+  max_failure_bundles: 30
+  stick_log_interval_seconds: 0.50
+  stick_log_delta: 0.08
+
+profile:
+  name: jak_and_daxter
+
+  # First run: observe only. Capture representative templates, then explicitly
+  # switch to explore after gameplay/menu/cutscene/death states are calibrated.
+  mode: observe
+  template_threshold: 0.84
+  random_seed: 2001
+
+  menu_action_seconds: 1.4
+  death_action_seconds: 1.5
+  explore_burst_min_seconds: 0.8
+  explore_burst_max_seconds: 1.8
+  explore_forward: 0.82
+  explore_turn: 0.28
+  camera_turn: 0.18
+  jump_probability: 0.08
