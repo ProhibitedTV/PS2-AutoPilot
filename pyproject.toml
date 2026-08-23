@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ps2-autopilot"
-version = "0.5.0"
+version = "0.5.1"
 description = "Autonomous PCSX2 gameplay framework for unattended livestreams."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -34,6 +34,8 @@ dev = ["pytest>=8.0", "ruff>=0.6"]
 ps2-autopilot = "ps2_autopilot.cli:main"
 ps2-autopilot-capture = "ps2_autopilot.capture_cli:main"
 ps2-autopilot-doctor = "ps2_autopilot.doctor:main"
+ps2-autopilot-log = "ps2_autopilot.runtime_cli:log_main"
+ps2-autopilot-report = "ps2_autopilot.runtime_cli:report_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
