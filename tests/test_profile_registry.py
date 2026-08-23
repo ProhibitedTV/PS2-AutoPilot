@@ -1,6 +1,6 @@
 import pytest
 
-from ps2_autopilot.profiles.jak_and_daxter import JakAndDaxterProfile
+from ps2_autopilot.profiles.jak_and_daxter_v3 import JakAndDaxterV3Profile
 from ps2_autopilot.profiles.madden2005_v22 import Madden2005V22Profile
 from ps2_autopilot.profiles.registry import (
     build_profile,
@@ -16,11 +16,12 @@ def test_registry_preserves_madden_v22_as_madden_factory():
     assert get_profile_spec("madden2005").maturity == "soak-tested"
 
 
-def test_registry_adds_jak_without_reusing_madden():
+def test_registry_promotes_jak_v3_without_reusing_madden():
     profile = build_profile({"name": "jak_and_daxter", "mode": "observe"})
-    assert isinstance(profile, JakAndDaxterProfile)
+    assert isinstance(profile, JakAndDaxterV3Profile)
     assert not isinstance(profile, Madden2005V22Profile)
     assert get_profile_spec("jak").name == "jak_and_daxter"
+    assert get_profile_spec("jak").maturity == "production-candidate"
     assert canonical_profile_name("precursor-legacy") == "jak_and_daxter"
 
 

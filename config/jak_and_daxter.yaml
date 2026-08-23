@@ -8,13 +8,12 @@ controller:
   backend: virtual_gamepad
   focus_window: true
 
-# Jak's first pass is calibration-oriented. The profile overrides recover() so a
-# static cutscene/menu never inherits Madden/generic recovery inputs. Savestate
-# reloads are effectively disabled until checkpoint/death recovery is calibrated.
+# Jak's production watchdog is conservative. V3 only runs active recovery while
+# gameplay owns the controller; menus/cutscenes still get a neutral hold.
 watchdog:
   motion_threshold: 0.006
-  stuck_seconds: 35
-  recovery_cooldown_seconds: 12
+  stuck_seconds: 25
+  recovery_cooldown_seconds: 10
   reload_savestate_after_recoveries: 999999
   load_state_key: "f3"
 
@@ -50,12 +49,14 @@ observability:
 profile:
   name: jak_and_daxter
 
-  # Calibration mode still fails closed on unknown states. Two explicit boot gates
-  # are allowed: OCR-verified PRESS START, then the known four-item main menu when
-  # NEW GAME is visually verified as the green selected item.
-  mode: observe
+  # V3 production mode keeps the verified title/main-menu gates from V2, then
+  # preserves unknown presentation/save screens and only owns explicit gameplay.
+  # The first live New Game save-file screen is intentionally still fail-closed
+  # until its exact selection semantics are calibrated from a real capture.
+  mode: production
   template_threshold: 0.84
   random_seed: 2001
+  production_random_seed: 2001
 
   ocr_enabled: true
   ocr_interval_seconds: 0.85
@@ -69,6 +70,34 @@ profile:
   new_game_green_ratio_threshold: 0.04
   new_game_green_margin: 0.012
 
+  # The opening is presentation-heavy and New Game first enters save-file
+  # selection. The timer is therefore only a conservative lower bound; unknown
+  # scenes also need motion evidence and no menu/save OCR before gameplay can own
+  # the controller without a calibrated gameplay template.
+  opening_cinematic_hold_seconds: 390
+  opening_gameplay_motion_threshold: 0.012
+  gameplay_grace_seconds: 8.0
+
+  scene_memory_sample_seconds: 1.25
+  scene_memory_history: 48
+  loop_similarity_threshold: 0.94
+  stagnant_motion_threshold: 0.008
+
+  production_forward: 0.70
+  production_turn: 0.52
+  production_camera: 0.22
+  production_burst_min_seconds: 0.75
+  production_burst_max_seconds: 1.45
+  production_jump_probability: 0.18
+  double_jump_probability: 0.65
+
+  # L2/R2 exposes the game's normal progress HUD. Probe it periodically and let
+  # OCR retain monotonic Power Cell / Orb / Scout Fly totals as reward telemetry.
+  progress_probe_initial_delay_seconds: 20
+  progress_probe_seconds: 120
+  progress_probe_hold_seconds: 1.25
+
+  # Legacy explore-mode tuning is retained for explicit calibration runs.
   menu_action_seconds: 1.4
   death_action_seconds: 1.5
   explore_burst_min_seconds: 0.8
