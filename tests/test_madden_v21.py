@@ -1,5 +1,4 @@
 from ps2_autopilot.madden_menu import MaddenScreen, MenuAssessment
-from ps2_autopilot.profiles import Madden2005Profile
 from ps2_autopilot.profiles.madden2005_v21 import Madden2005V21Profile
 
 
@@ -13,8 +12,8 @@ def profile(**overrides):
     return Madden2005V21Profile(cfg)
 
 
-def test_default_profile_alias_points_at_v21():
-    assert Madden2005Profile is Madden2005V21Profile
+def test_v21_profile_remains_available():
+    assert profile().name == "madden2005"
 
 
 def test_profile_save_prompt_requires_explicit_modal_evidence():
