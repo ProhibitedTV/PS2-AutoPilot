@@ -1,6 +1,11 @@
 window_title_contains: "PCSX2"
 loop_hz: 12
 
+# Keep computer-vision helpers bounded so PCSX2 and OBS remain the priority
+# realtime workloads. Two OpenCV worker threads is deliberately conservative.
+performance:
+  opencv_threads: 2
+
 controller:
   backend: virtual_gamepad
   focus_window: true
@@ -16,10 +21,13 @@ overlay:
   enabled: true
   host: "127.0.0.1"
   port: 8765
+  # OBS does not need a fresh state file for every 12 Hz control tick.
+  state_hz: 2.0
 
 # Structured logging for long unattended runs. The decision/input logs remain
 # compact while v0.6 also records a full 1-second telemetry snapshot and a focused
-# spatial stream. This is intentionally verbose without becoming 12-Hz frame spam.
+# spatial stream. This stays intentionally verbose even though the public overlay
+# no longer exposes engineering internals.
 observability:
   enabled: true
   console: true
@@ -65,9 +73,9 @@ profile:
   presentation_stall_nudge_seconds: 30.0
   presentation_hard_recovery_seconds: 55.0
 
-  # v0.6 lightweight spatial perception. Detection runs below the 12-Hz reflex
-  # loop and only overrides steering when confidence clears the configured gates.
-  spatial_interval_seconds: 0.20
+  # Spatial perception remains fast enough for pursuit while leaving more CPU
+  # headroom for the emulator/encoder than the initial 5 Hz calibration build.
+  spatial_interval_seconds: 0.25
   spatial_sample_width: 480
   spatial_player_min_confidence: 0.30
   spatial_max_players: 22
@@ -78,9 +86,11 @@ profile:
   spatial_open_confidence: 0.42
   spatial_max_age_seconds: 0.70
 
-  # Semantic vision. OCR runs slower than the 12 Hz reflex loop.
+  # Semantic OCR is deliberately slower than the 12 Hz reflex loop. v0.6.1 also
+  # bounds 1080p input to 1280px internally, disables needless text orientation
+  # classification, and caps ONNX Runtime OCR threads at 2/1.
   ocr_enabled: true
-  ocr_interval_seconds: 0.70
+  ocr_interval_seconds: 0.85
   ocr_min_width: 960
   ocr_min_confidence: 0.42
 
