@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-import time
 
 from ps2_autopilot.controllers.base import Controller
 from ps2_autopilot.jak_knowledge import JakControlMode, JakProgression, control_mode_for_template
@@ -32,8 +31,6 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
             raise ValueError("Jak profile mode must be 'observe', 'explore', or 'production'")
 
         parent_cfg = dict(cfg)
-        # V1/V2 predate production mode; their explore path is the appropriate
-        # inheritance behavior after V3 has made an explicit gameplay decision.
         parent_cfg["mode"] = "explore" if requested_mode == "production" else requested_mode
         super().__init__(parent_cfg)
         self.mode = requested_mode
@@ -50,6 +47,9 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
         self.gameplay_grace_seconds = max(1.0, float(cfg.get("gameplay_grace_seconds", 8.0)))
         self.opening_cinematic_hold_seconds = max(
             0.0, float(cfg.get("opening_cinematic_hold_seconds", 390.0))
+        )
+        self.opening_gameplay_motion_threshold = max(
+            0.002, min(0.20, float(cfg.get("opening_gameplay_motion_threshold", 0.012)))
         )
         self.campaign_launch_at: float | None = None
         self.gameplay_assumed_after_opening = False
@@ -76,10 +76,13 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
 
         self.progress = JakProgression()
         self.progress_probe_seconds = max(20.0, float(cfg.get("progress_probe_seconds", 120.0)))
+        self.progress_probe_initial_delay = max(
+            5.0, float(cfg.get("progress_probe_initial_delay_seconds", 20.0))
+        )
         self.progress_probe_hold_seconds = max(
             0.7, float(cfg.get("progress_probe_hold_seconds", 1.25))
         )
-        self.next_progress_probe_at = 0.0
+        self.next_progress_probe_at: float | None = None
         self.progress_probe_release_at = 0.0
         self.progress_probe_active = False
 
@@ -104,12 +107,12 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
         before = self.main_menu_confirms
         action = super()._main_menu_gate(controller, ctx)
         if self.main_menu_confirms > before and self.campaign_launch_at is None:
+            # New Game is followed by save-file selection and then the opening
+            # presentation. This is only a conservative lower-bound timer.
             self.campaign_launch_at = ctx.now
         return action
 
     def _semantic_refresh(self, ctx: ProfileContext) -> None:
-        # Keep OCR alive during gameplay too: progress/status overlays are a useful
-        # source of persistent reward signals, and the bounded worker is off-path.
         snapshot = self.ocr.read(ctx.frame, ctx.now)
         self.last_ocr_text = snapshot.text
         self.last_ocr_confidence = snapshot.mean_confidence
@@ -140,10 +143,13 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
         if ctx.now - self.campaign_launch_at < self.opening_cinematic_hold_seconds:
             return False
         compact = self._compact_text(self.last_ocr_text)
-        # Static save/menu screens often contain these words. Never promote them to
-        # gameplay just because a timer elapsed.
-        blockers = ("SAVE", "LOADGAME", "NEWGAME", "OPTIONS", "SELECTGAME", "MEMORYCARD")
+        blockers = (
+            "SAVE", "LOADGAME", "NEWGAME", "OPTIONS", "SELECTGAME", "MEMORYCARD",
+            "FILE", "ERASE", "COPY",
+        )
         if any(marker in compact for marker in blockers):
+            return False
+        if ctx.motion < self.opening_gameplay_motion_threshold:
             return False
         self.gameplay_assumed_after_opening = True
         return True
@@ -153,13 +159,9 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
         if phase == JakPhase.GAMEPLAY:
             self.last_gameplay_at = ctx.now
             return phase
-
-        # A short ambiguity latch prevents a single bad template/OCR frame from
-        # taking controller ownership away from an active platforming sequence.
         if phase == JakPhase.UNKNOWN and ctx.now - self.last_gameplay_at <= self.gameplay_grace_seconds:
             self._set_phase(JakPhase.GAMEPLAY)
             return JakPhase.GAMEPLAY
-
         if phase == JakPhase.UNKNOWN and self._unknown_after_opening_can_be_gameplay(ctx):
             self._set_phase(JakPhase.GAMEPLAY)
             self.last_gameplay_at = ctx.now
@@ -177,8 +179,13 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
             self.current_action = "jak: progress probe complete; resume exploration"
 
     def _maybe_progress_probe(self, controller: Controller, ctx: ProfileContext) -> bool:
+        if self.next_progress_probe_at is None:
+            self.next_progress_probe_at = ctx.now + self.progress_probe_initial_delay
+            return False
         if self.progress_probe_active:
-            self._neutral_once(controller)
+            # Do not release_all: R2 must remain held while OCR reads the stats HUD.
+            controller.neutral_sticks()
+            self._neutralized = False
             self.current_action = "jak: reading L2/R2 progress totals; hold traversal"
             return True
         if ctx.now < self.next_progress_probe_at:
@@ -227,7 +234,6 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
             return self.current_action
         if ctx.now < self.next_production_action_at:
             return self.current_action
-
         looping = self.scene_metrics.loop_similarity >= self.loop_similarity_threshold
         stagnant = (
             self.scene_metrics.center_motion <= self.stagnant_motion_threshold
@@ -235,7 +241,6 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
         )
         if looping or stagnant:
             return self._anti_loop(controller, ctx)
-
         heading = self.production_random.uniform(-0.18, 0.18)
         camera = self.production_random.uniform(-self.production_camera * 0.35, self.production_camera * 0.35)
         controller.set_left_stick(heading, self.production_forward)
@@ -244,7 +249,6 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
         suffix = ""
         if self.production_random.random() < self.production_jump_probability:
             suffix = self._schedule_jump(controller, ctx)
-
         duration = self.production_random.uniform(self.production_burst_min, self.production_burst_max)
         self.next_production_action_at = ctx.now + duration
         self.production_bursts += 1
@@ -298,10 +302,8 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
         self.last_gameplay_at = ctx.now
         self._update_control_mode()
         self._release_timed_holds(controller, ctx)
-
         if self._maybe_progress_probe(controller, ctx):
             return self.current_action
-
         if self.control_mode == JakControlMode.ON_FOOT:
             return self._on_foot(controller, ctx)
         if self.control_mode == JakControlMode.ZOOMER:
@@ -314,7 +316,6 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
             self._neutral_once(controller)
             self.current_action = "jak: fishing mode recognized; await dedicated fish perception"
             return self.current_action
-
         self._neutral_once(controller)
         self.current_action = "jak: gameplay control mode unknown; hold inputs"
         return self.current_action
@@ -322,22 +323,16 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
     def tick(self, controller: Controller, ctx: ProfileContext) -> str:
         self._semantic_refresh(ctx)
         phase = self._production_phase(ctx) if self.mode == "production" else self._observe_phase(ctx)
-
         if self.title_gate_visible:
             return self._title_gate(controller, ctx)
         if self.main_menu_visible:
             return self._main_menu_gate(controller, ctx)
-
         if self.mode == "observe":
             return self._observe_only(controller, ctx)
         if self.mode == "explore":
             return super().tick(controller, ctx)
-
-        # Production mode owns only explicit gameplay. Story presentation and every
-        # unknown/static menu remain hands-off until calibrated.
         if phase == JakPhase.GAMEPLAY:
             return self._production_gameplay(controller, ctx)
-
         self._release_timed_holds(controller, ctx)
         controller.neutral_sticks()
         self._neutralized = True
@@ -354,19 +349,17 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
         """Gameplay-only recovery ladder; menus/cutscenes never inherit it."""
         if self.mode != "production" or self.phase != JakPhase.GAMEPLAY:
             return super().recover(controller)
-
         step = self.recovery_step % 4
         self.recovery_step += 1
         self.second_jump_pending = False
         controller.release_all()
         controller.neutral_sticks()
         direction = -1.0 if step % 2 == 0 else 1.0
-
         if self.control_mode == JakControlMode.ZOOMER:
             controller.set_left_stick(direction * 0.72, 0.0)
-            controller.hold("cross")
+            controller.tap("cross", 0.20)
             controller.tap("r1", 0.08)
-            self.current_action = "jak: Zoomer recovery steer + hop"
+            self.current_action = "jak: Zoomer recovery steer + accelerate/hop"
             return self.current_action
         if self.control_mode == JakControlMode.FLUT_FLUT:
             controller.set_left_stick(direction * 0.35, 0.70)
@@ -377,7 +370,6 @@ class JakAndDaxterV3Profile(JakAndDaxterV2Profile):
         if self.control_mode in {JakControlMode.CANNON, JakControlMode.FISHING}:
             self.current_action = "jak: special-mode watchdog neutral hold"
             return self.current_action
-
         if step == 0:
             controller.set_left_stick(direction * 0.75, 0.45)
             controller.set_right_stick(-direction * 0.45, 0.0)
