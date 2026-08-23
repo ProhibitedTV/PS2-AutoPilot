@@ -7,6 +7,7 @@ from ps2_autopilot.madden_menu import (
     MaddenMenuNavigator,
     MaddenScreen,
     MenuAssessment,
+    MenuHighlight,
     detect_menu_highlight,
 )
 from ps2_autopilot.madden_ocr import OCRLine, OCRSnapshot
@@ -86,25 +87,56 @@ def test_verified_destination_clears_transaction():
 
 def test_pause_ocr_cluster_is_recognized_without_header():
     assert Madden2005V5Profile.looks_like_pause_text(
-        "RESUME GAME | INSTANT REPLAY | GAME STATS | SETTINGS | QUIT GAME"
+        "RESUME GAME | INSTANT REPLAY | GAME STATS | SETTINGS | QUIT/SAVE"
     )
     assert Madden2005V5Profile.looks_like_pause_text("RESUME | GAME STATS")
     assert not Madden2005V5Profile.looks_like_pause_text("GAME SETTINGS")
 
 
-def test_pause_recovery_prefers_start_then_cross():
+def test_pause_recovery_tries_start_three_times_then_seeks_resume():
     profile = Madden2005V5Profile({"ocr_enabled": False})
     controller = FakeController()
-    profile.phase_since = 1.0
     profile.next_action_at = 0.0
-    profile._paused(controller, now=2.0)
-    assert ("tap", "start") in controller.events
 
-    profile.pause_start_attempts = 3
-    profile.phase_since = 1.0
+    for now in (2.0, 4.0, 6.0):
+        profile.next_action_at = 0.0
+        profile._paused(controller, now=now)
+    assert profile.pause_start_attempts == 3
+    assert [(kind, action) for kind, action in controller.events if kind == "tap"].count(
+        ("tap", "start")
+    ) == 3
+
+    profile.last_ocr = snapshot(("RESUME GAME", 0.18), ("QUIT/SAVE", 0.82))
+    profile.menu_highlight = MenuHighlight("QUIT/SAVE", 0.82, 0.8, 0.8)
     profile.next_action_at = 0.0
-    profile._paused(controller, now=8.0)
+    action = profile._paused(controller, now=8.0)
+    assert ("tap", "up") in controller.events
+    assert "toward RESUME" in action
+
+
+def test_pause_cross_only_when_resume_is_verified_highlight():
+    profile = Madden2005V5Profile({"ocr_enabled": False})
+    controller = FakeController()
+    profile.pause_start_attempts = 3
+    profile.last_ocr = snapshot(("RESUME GAME", 0.18), ("QUIT/SAVE", 0.82))
+    profile.menu_highlight = MenuHighlight("RESUME GAME", 0.18, 0.8, 0.8)
+    profile.next_action_at = 0.0
+
+    action = profile._paused(controller, now=8.0)
     assert ("tap", "cross") in controller.events
+    assert "verified RESUME GAME" in action
+
+
+def test_pause_never_blindly_confirms_quit_save():
+    profile = Madden2005V5Profile({"ocr_enabled": False})
+    controller = FakeController()
+    profile.pause_start_attempts = 3
+    profile.last_ocr = snapshot(("RESUME GAME", 0.18), ("QUIT/SAVE", 0.82))
+    profile.menu_highlight = MenuHighlight("QUIT/SAVE", 0.82, 0.8, 0.8)
+    profile.next_action_at = 0.0
+
+    profile._paused(controller, now=8.0)
+    assert ("tap", "cross") not in controller.events
 
 
 def test_unknown_state_is_captured(tmp_path):
