@@ -49,9 +49,9 @@ observability:
 profile:
   name: jak_and_daxter
 
-  # V6 keeps the production policy from V3, the boot/save gates from V4/V5, and adds
-  # a real-capture visual fallback for the four-EMPTY save-file selector when OCR
-  # cannot read Jak's stylized menu font. Unknown states still fail closed.
+  # V7 keeps the real boot/save gates from V4-V6, then adds safer autonomous
+  # traversal and a reversible camera-response probe so the runtime can reacquire an
+  # already-running gameplay session after a supervised restart.
   mode: production
   template_threshold: 0.84
   random_seed: 2001
@@ -71,9 +71,6 @@ profile:
 
   # V4 real-capture main-menu fallback. The selected NEW GAME row should contain a
   # strong lime-green text signal while LOAD GAME / OPTIONS / BACK remain neutral.
-  # A visual-only match is accepted only after the screen is stable; partial OCR can
-  # promote it immediately. These values were calibrated from a real 1920x1080 PCSX2
-  # capture and use normalized ROIs so they scale with the render window.
   main_menu_ocr_quorum: 3
   main_menu_visual_green_threshold: 0.12
   main_menu_visual_competing_max: 0.035
@@ -82,18 +79,13 @@ profile:
 
   # First-run Jak save creation defaults to NO. Strong OCR must establish a non-
   # destructive save/create/overwrite prompt before this transaction is allowed.
-  # The lime highlight is checked independently every frame; LEFT targets YES and
-  # CROSS confirms it. Once the save file exists, Jak's normal memory-card writes can
-  # persist campaign progress without relying on emulator savestates.
   save_choice_green_threshold: 0.06
   save_choice_green_margin: 0.04
   save_prompt_select_settle_seconds: 0.30
   save_prompt_retry_seconds: 4.0
 
   # V5/V6 save-file selector. OCR remains the preferred evidence path. If OCR misses
-  # the stylized title/EMPTY text, V6 accepts only the stable real-menu geometry: title,
-  # four bright/edged EMPTY rows, and the CONTINUE WITHOUT SAVING row all have to be
-  # present. The live failing capture measured comfortably above these thresholds.
+  # the stylized title/EMPTY text, V6 accepts only the stable real-menu geometry.
   save_file_retry_seconds: 4.0
   save_selector_visual_stable_motion: 0.008
   save_selector_visual_title_white: 0.16
@@ -103,10 +95,8 @@ profile:
   save_selector_visual_continue_white: 0.04
   save_selector_visual_continue_edge: 0.03
 
-  # The opening is presentation-heavy and New Game first enters save-file
-  # selection. The timer is only a conservative lower bound; unknown scenes also
-  # need motion evidence and no menu/save OCR before gameplay can own the controller
-  # without a calibrated gameplay template.
+  # The opening is presentation-heavy. The existing conservative handoff remains the
+  # primary full-boot path.
   opening_cinematic_hold_seconds: 390
   opening_gameplay_motion_threshold: 0.012
   gameplay_grace_seconds: 8.0
@@ -123,6 +113,42 @@ profile:
   production_burst_max_seconds: 1.45
   production_jump_probability: 0.18
   double_jump_probability: 0.65
+
+  # V7 land routing. Reduce the straight-ahead bias and jumping frequency while
+  # autonomous perception is still coarse.
+  safe_forward_scale: 0.82
+  safe_jump_scale: 0.55
+
+  # V7 shoreline/ocean guardrail. Ratios are measured only in the lower playfield,
+  # split left/center/right. When blue/cyan water becomes dominant ahead, first
+  # backtrack the route that got us there, then arc toward the drier side.
+  water_hue_min: 85
+  water_hue_max: 140
+  water_sat_min: 45
+  water_value_min: 25
+  water_center_caution: 0.09
+  water_total_caution: 0.11
+  water_release_ratio: 0.045
+  water_clear_seconds: 1.0
+  water_backtrack_seconds: 1.6
+  water_turn_seconds: 1.4
+  water_backtrack_speed: 0.72
+  water_escape_turn: 0.82
+  water_escape_forward: 0.28
+
+  # If AutoPilot itself is restarted while PCSX2 remains in gameplay, V7 does not
+  # blindly claim the unknown screen. It waits for a relatively quiet frame, nudges
+  # only the right stick, and requires two camera-motion responses before restoring
+  # gameplay ownership. Menus/save screens remain blockers.
+  attach_probe_after_seconds: 4.0
+  attach_probe_idle_seconds: 0.8
+  attach_probe_baseline_max: 0.020
+  attach_probe_response_min: 0.018
+  attach_probe_camera_x: 0.30
+  attach_probe_drive_seconds: 0.30
+  attach_probe_observe_seconds: 0.80
+  attach_probe_retry_seconds: 1.5
+  attach_probe_confirmations_required: 2
 
   # L2/R2 exposes the game's normal progress HUD. Probe it periodically and let OCR
   # retain monotonic Power Cell / Orb / Scout Fly totals as reward telemetry.
