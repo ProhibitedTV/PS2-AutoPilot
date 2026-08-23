@@ -49,9 +49,9 @@ observability:
 profile:
   name: jak_and_daxter
 
-  # V4 keeps the production policy from V3 but hardens the boot/menu boundary using
-  # tolerant OCR plus visual signatures for NEW GAME and safe YES/NO save prompts.
-  # Unknown states still fail closed and become calibration evidence.
+  # V6 keeps the production policy from V3, the boot/save gates from V4/V5, and adds
+  # a real-capture visual fallback for the four-EMPTY save-file selector when OCR
+  # cannot read Jak's stylized menu font. Unknown states still fail closed.
   mode: production
   template_threshold: 0.84
   random_seed: 2001
@@ -89,6 +89,19 @@ profile:
   save_choice_green_margin: 0.04
   save_prompt_select_settle_seconds: 0.30
   save_prompt_retry_seconds: 4.0
+
+  # V5/V6 save-file selector. OCR remains the preferred evidence path. If OCR misses
+  # the stylized title/EMPTY text, V6 accepts only the stable real-menu geometry: title,
+  # four bright/edged EMPTY rows, and the CONTINUE WITHOUT SAVING row all have to be
+  # present. The live failing capture measured comfortably above these thresholds.
+  save_file_retry_seconds: 4.0
+  save_selector_visual_stable_motion: 0.008
+  save_selector_visual_title_white: 0.16
+  save_selector_visual_title_edge: 0.04
+  save_selector_visual_row_white: 0.08
+  save_selector_visual_row_edge: 0.025
+  save_selector_visual_continue_white: 0.04
+  save_selector_visual_continue_edge: 0.03
 
   # The opening is presentation-heavy and New Game first enters save-file
   # selection. The timer is only a conservative lower bound; unknown scenes also
