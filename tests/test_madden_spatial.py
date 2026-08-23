@@ -49,18 +49,26 @@ def test_spatial_tracker_finds_stable_players_and_open_space():
     assert first_ids & later_ids
 
 
-def test_spatial_tracker_can_form_moving_ball_hypothesis():
+def test_spatial_tracker_promotes_temporally_continuous_ball_hypothesis():
     tracker = MaddenSpatialTracker(sample_width=480, min_player_confidence=0.24)
-    previous = field_frame(ball_x=315)
-    current = field_frame(ball_x=342)
+    frame_a = field_frame(ball_x=315)
+    frame_b = field_frame(ball_x=342)
+    frame_c = field_frame(ball_x=358)
 
-    snapshot = tracker.observe(current, previous, now=2.0)
-    assert snapshot.available
-    assert snapshot.ball is not None
-    assert snapshot.ball.confidence >= 0.45
-    assert snapshot.target_confidence >= 0.45
-    assert -1.0 <= snapshot.target_x <= 1.0
-    assert -1.0 <= snapshot.target_y <= 1.0
+    seed = tracker.observe(frame_b, frame_a, now=2.0)
+    assert seed.available
+    assert seed.ball is not None
+    # The first sighting may deliberately remain below the gameplay action gate.
+    assert 0.30 <= seed.ball.confidence <= 0.92
+
+    confirmed = tracker.observe(frame_c, frame_b, now=2.2)
+    assert confirmed.available
+    assert confirmed.ball is not None
+    assert confirmed.ball.confidence >= seed.ball.confidence
+    assert confirmed.ball.confidence >= 0.45
+    assert confirmed.target_confidence >= 0.45
+    assert -1.0 <= confirmed.target_x <= 1.0
+    assert -1.0 <= confirmed.target_y <= 1.0
 
 
 def test_spatial_tracker_fails_conservative_off_field():
