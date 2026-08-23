@@ -5,7 +5,7 @@ from typing import Callable
 
 from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
-from .jak_and_daxter_v10 import JakAndDaxterV10Profile
+from .jak_and_daxter_v11 import JakAndDaxterV11Profile
 from .madden2005_v22 import Madden2005V22Profile
 
 
@@ -27,7 +27,7 @@ def _madden_factory(cfg: dict) -> GameProfile:
 
 
 def _jak_factory(cfg: dict) -> GameProfile:
-    return JakAndDaxterV10Profile(dict(cfg))
+    return JakAndDaxterV11Profile(dict(cfg))
 
 
 PROFILE_SPECS: dict[str, ProfileSpec] = {
