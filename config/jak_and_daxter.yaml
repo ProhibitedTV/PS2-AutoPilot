@@ -8,7 +8,7 @@ controller:
   backend: virtual_gamepad
   focus_window: true
 
-# Jak recovery stays conservative. V9 handles short local stalls inside proven
+# Jak recovery stays conservative. V9+ handles short local stalls inside proven
 # gameplay; the global watchdog remains the slow last-resort recovery ladder.
 watchdog:
   motion_threshold: 0.006
@@ -49,9 +49,8 @@ observability:
 profile:
   name: jak_and_daxter
 
-  # V9 keeps V8's sticky gameplay ownership and adds scene geometry plus a closed
-  # action/outcome recovery loop. Color alone no longer owns the shoreline policy,
-  # and a blocked locomotion command is handled locally instead of waiting 25 seconds.
+  # V10 keeps V9's closed-loop safety, then adds recognizable game-specific skills:
+  # Scout Fly dive attacks, Blue Eco seeking, moving spin clears, and guarded roll jumps.
   mode: production
   template_threshold: 0.84
   random_seed: 2001
@@ -95,8 +94,6 @@ profile:
   save_selector_visual_continue_white: 0.04
   save_selector_visual_continue_edge: 0.03
 
-  # The opening is presentation-heavy. The existing conservative handoff remains the
-  # primary full-boot path.
   opening_cinematic_hold_seconds: 390
   opening_gameplay_motion_threshold: 0.012
   gameplay_grace_seconds: 8.0
@@ -114,12 +111,10 @@ profile:
   production_jump_probability: 0.18
   double_jump_probability: 0.65
 
-  # V7 land routing. Reduce the straight-ahead bias and jumping frequency while
-  # autonomous perception is still coarse.
   safe_forward_scale: 0.82
   safe_jump_scale: 0.55
 
-  # Base water color cue. V9 no longer treats this ratio by itself as proof of water.
+  # Water color is only a candidate cue; V9 geometry must confirm a coherent surface.
   water_hue_min: 85
   water_hue_max: 140
   water_sat_min: 45
@@ -134,10 +129,6 @@ profile:
   water_escape_turn: 0.82
   water_escape_forward: 0.28
 
-  # V9 water geometry. The live wall/leaf capture produced ~0.12 raw blue/cyan but
-  # only ~0.013 largest-component area, ~0.096 width and <0.25 maximum row coverage.
-  # Real open water should form a much broader/coherent surface before shoreline
-  # avoidance is allowed to take control.
   water_geometry_max_width: 480
   water_component_min_ratio: 0.020
   water_component_min_width: 0.18
@@ -149,8 +140,6 @@ profile:
   water_direction_reconsider_seconds: 1.75
   water_direction_flip_margin: 0.10
 
-  # V7 mid-session attach probe. If AutoPilot is restarted while PCSX2 remains in
-  # gameplay, require two reversible right-stick camera responses before ownership.
   attach_probe_after_seconds: 4.0
   attach_probe_idle_seconds: 0.8
   attach_probe_baseline_max: 0.020
@@ -161,8 +150,6 @@ profile:
   attach_probe_retry_seconds: 1.5
   attach_probe_confirmations_required: 2
 
-  # V8 lost-gameplay recovery. Once a session has already demonstrated gameplay,
-  # one camera response is enough to restore ownership after the normal grace window.
   reacquire_after_seconds: 2.0
   reacquire_confirmations_required: 1
   post_reacquire_escape_seconds: 1.35
@@ -170,10 +157,7 @@ profile:
   post_reacquire_turn: 0.60
   post_reacquire_camera: 0.32
 
-  # V9 local obstacle/contact recovery. When movement is being commanded but visual
-  # motion stays nearly zero, reverse away, pivot, and test a new path. Alternate the
-  # side after a failed test and only escalate to a jump-turn when coherent water is
-  # not present. Successful directions are remembered briefly by the route sampler.
+  # Fast local obstacle/contact recovery from V9.
   local_stuck_motion_threshold: 0.0035
   local_stuck_trigger_seconds: 2.2
   local_stuck_command_warmup_seconds: 0.55
@@ -191,8 +175,48 @@ profile:
   local_stuck_cooldown_seconds: 1.4
   local_stuck_route_memory_seconds: 5.5
 
-  # L2/R2 exposes the game's normal progress HUD. Probe it periodically and let OCR
-  # retain monotonic Power Cell / Orb / Scout Fly totals as reward telemetry.
+  # V10 Scout Fly box cue. Boxes are red/gray and require a jump+dive attack.
+  scout_red_sat_min: 90
+  scout_red_value_min: 55
+  scout_gray_value_min: 85
+  scout_gray_sat_max: 105
+  scout_min_area: 0.0010
+  scout_max_area: 0.045
+  scout_gray_neighbor_min: 0.10
+  scout_cue_min_confidence: 0.42
+  scout_approach_seconds: 0.55
+  scout_jump_lead_seconds: 0.18
+  scout_follow_seconds: 0.34
+
+  # V10 Blue Eco cue. Only acts when V9 says the blue pixels are not coherent water.
+  blue_eco_hue_min: 88
+  blue_eco_hue_max: 118
+  blue_eco_sat_min: 95
+  blue_eco_value_min: 150
+  blue_eco_white_value_min: 205
+  blue_eco_white_sat_max: 80
+  blue_eco_min_area: 0.0008
+  blue_eco_max_area: 0.075
+  blue_eco_white_neighbor_min: 0.010
+  blue_eco_cue_min_confidence: 0.38
+  blue_eco_seek_seconds: 0.72
+  blue_eco_seek_forward: 0.54
+  cue_refresh_seconds: 0.16
+  cue_turn_gain: 0.90
+
+  # V10 action vocabulary. Spin is low-risk while moving; roll-jumps only happen on
+  # stable, dry, mostly straight travel and remain subordinate to all recovery layers.
+  spin_attack_min_seconds: 1.6
+  spin_attack_max_seconds: 3.2
+  roll_jump_min_seconds: 5.0
+  roll_jump_max_seconds: 9.0
+  roll_jump_motion_min: 0.012
+  roll_jump_water_max: 0.055
+  roll_jump_heading_max: 0.20
+  roll_jump_roll_seconds: 0.14
+  roll_jump_air_seconds: 0.48
+
+  # R2 exposes the game's normal progress HUD. OCR keeps monotonic collectible totals.
   progress_probe_initial_delay_seconds: 20
   progress_probe_seconds: 120
   progress_probe_hold_seconds: 1.25
