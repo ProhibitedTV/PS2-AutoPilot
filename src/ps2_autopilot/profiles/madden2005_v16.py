@@ -145,7 +145,7 @@ class Madden2005V16Profile(Madden2005V15Profile):
 
     def _verified_play_now_cross(self, controller: Controller, now: float) -> str:
         self.frontend_verified_crosses += 1
-        action = self.menu._tap(
+        self.menu._tap(
             controller,
             "cross",
             now,
@@ -177,6 +177,22 @@ class Madden2005V16Profile(Madden2005V15Profile):
 
         if self._play_now_ready(now):
             return self._verified_play_now_cross(controller, now)
+
+        # Once PLAY NOW first appears as the sole top-level title, stop moving long
+        # enough to confirm that OCR has actually settled on it. Without this hold,
+        # the seeker could immediately nudge away from the target during the same
+        # frame that created the candidate.
+        if self.frontend_last_marker == "PLAYNOW" and not self._highlight_conflicts_with_play_now():
+            remaining = max(
+                0.0,
+                self.frontend_play_now_confirm_seconds
+                - max(0.0, now - self.frontend_play_now_candidate_since),
+            )
+            self.next_action_at = now + min(0.35, max(0.10, remaining))
+            self.current_action = (
+                f"main menu: PLAY NOW candidate; hold for verification ({remaining:.2f}s)"
+            )
+            return self.current_action
 
         if now < self.next_action_at:
             return self.current_action
