@@ -5,10 +5,31 @@ def test_pick_a_play_is_known_playcall_context():
     assert semantic_context({"phase": "menu", "ocr_text": "DEFENSE PICK A PLAY!"}) == "playcall"
 
 
-def test_game_stats_overlay_is_presentation_not_unknown_navigation():
+def test_game_stats_table_is_known_stats_context():
+    state = {
+        "phase": "menu",
+        "ocr_text": (
+            "GAME STATS | Jets | Bills | Score | Total Offense | Rushing Yards | "
+            "Passing Yards | First Downs | PR Yards | KR Yards | Total Yards | Giveaways"
+        ),
+        "field_green": 0.09,
+    }
+    assert semantic_context(state) == "stats"
+
+
+def test_stats_info_tab_screen_is_known_stats_context():
+    state = {
+        "phase": "menu",
+        "ocr_text": "STATS/INFO | GAME | INDIVIDUAL | SCORING | DRIVE SUMMARY | Jets | Bills",
+        "field_green": 0.10,
+    }
+    assert semantic_context(state) == "stats"
+
+
+def test_current_drive_overlay_is_presentation_not_stats_navigation():
     state = {
         "phase": "transition",
-        "ocr_text": "GAME STATS | Current Drive | Time of Possession | Jets | Bills",
+        "ocr_text": "Current Drive | Time of Possession | Jets | Bills",
         "field_green": 0.08,
     }
     assert semantic_context(state) == "presentation"
