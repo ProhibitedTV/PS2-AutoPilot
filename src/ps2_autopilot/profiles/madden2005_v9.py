@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from ps2_autopilot.controllers.base import Controller
 from ps2_autopilot.madden_ocr import MaddenOCR
 from ps2_autopilot.madden_vision import MaddenObservation
@@ -7,6 +9,14 @@ from ps2_autopilot.madden_vision import MaddenObservation
 from .base import ProfileContext
 from .madden2005 import MaddenPhase, Possession
 from .madden2005_v8 import Madden2005V8Profile
+
+
+_NFL_TEAMS = {
+    "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN", "DET",
+    "GB", "HOU", "IND", "JAX", "KC", "MIA", "MIN", "NE", "NO", "NYG", "NYJ", "OAK",
+    "PHI", "PIT", "SD", "SEA", "SF", "STL", "TB", "TEN", "WAS",
+}
+_SCORE_RE = re.compile(r"^\d{1,2}$")
 
 
 class Madden2005V9Profile(Madden2005V8Profile):
@@ -38,9 +48,7 @@ class Madden2005V9Profile(Madden2005V8Profile):
             use_orientation_classifier=bool(cfg.get("ocr_use_orientation_classifier", False)),
         )
 
-        self.play_clock_urgent_seconds = max(
-            2, int(cfg.get("play_clock_urgent_seconds", 8))
-        )
+        self.play_clock_urgent_seconds = max(2, int(cfg.get("play_clock_urgent_seconds", 8)))
         self.pre_snap_failsafe_seconds = max(
             self.pre_snap_wait + 0.5,
             float(cfg.get("pre_snap_failsafe_seconds", 5.0)),
@@ -67,9 +75,6 @@ class Madden2005V9Profile(Madden2005V8Profile):
             return
 
         if new_phase == MaddenPhase.PLAYCALL:
-            # Role is evidence about this play-call screen, not a permanent truth.
-            # Preserve the prior label for telemetry but decay it below the
-            # authoritative-defense threshold until current-play OCR confirms it.
             self.current_playcall_role = Possession.UNKNOWN
             self.current_playcall_role_at = -1e9
             self.possession_confidence = min(self.possession_confidence, 0.50)
@@ -79,7 +84,6 @@ class Madden2005V9Profile(Madden2005V8Profile):
 
     def _observe(self, ctx: ProfileContext) -> MaddenObservation:
         obs = super()._observe(ctx)
-
         if self.phase == MaddenPhase.PLAYCALL and self.possession_confidence >= 0.84:
             reason = str(getattr(self, "playcall_role_reason", ""))
             if reason and reason not in {"none", "ambiguous", "awaiting playcall OCR"}:
@@ -111,40 +115,24 @@ class Madden2005V9Profile(Madden2005V8Profile):
         idle_for = max(0.0, now - self.phase_since)
         play_clock = self.situation.play_clock_seconds
 
-        # Best signal: Madden's score bug often exposes the play clock as :15,
-        # :08, :02, etc. A Cross probe is safe for either role: offense snaps,
-        # defense changes selected player.
         if (
             play_clock is not None
             and play_clock <= self.play_clock_urgent_seconds
             and now >= self.next_action_at
             and self.pre_snap_urgency_probes < self.pre_snap_max_failsafe_probes
         ):
-            return self._safe_snap_switch_probe(
-                controller,
-                now,
-                f"play clock {play_clock}s",
-            )
+            return self._safe_snap_switch_probe(controller, now, f"play clock {play_clock}s")
 
         role_is_fresh = self._fresh_playcall_role(now)
         if (
             self.possession == Possession.DEFENSE
             and self.possession_confidence >= 0.62
-            and not (
-                role_is_fresh
-                and self.current_playcall_role == Possession.DEFENSE
-            )
+            and not (role_is_fresh and self.current_playcall_role == Possession.DEFENSE)
             and idle_for >= self.pre_snap_wait
         ):
-            # This is the exact live failure observed in the 0.6 logs: a defensive
-            # belief with no current-playcall confirmation can make us wait until
-            # delay-of-game. Demote stale evidence so the normal unknown-role probe
-            # path can test whether Cross starts the play.
             self.possession_confidence = min(self.possession_confidence, 0.44)
             self.pre_snap_stale_role_downgrades += 1
 
-        # Last-resort timer independent of OCR. Even a false-positive defensive
-        # playcall can no longer hold PRE_SNAP for 20+ seconds.
         if (
             idle_for >= self.pre_snap_failsafe_seconds
             and now >= self.next_action_at
@@ -158,8 +146,31 @@ class Madden2005V9Profile(Madden2005V8Profile):
 
         return super()._pre_snap(controller, now)
 
+    def _broadcast_score(self) -> tuple[str | None, int | None, str | None, int | None]:
+        """Extract two score-bug team/score pairs from top-screen OCR when present."""
+
+        lines = [line for line in self.last_ocr.lines if line.y <= 0.33]
+        pairs: list[tuple[str, int]] = []
+        for index, line in enumerate(lines):
+            team = line.text.strip().upper()
+            if team not in _NFL_TEAMS:
+                continue
+            for candidate in lines[index + 1 : index + 4]:
+                score_text = candidate.text.strip()
+                if _SCORE_RE.fullmatch(score_text):
+                    score = int(score_text)
+                    if 0 <= score <= 99:
+                        pairs.append((team, score))
+                        break
+            if len(pairs) >= 2:
+                break
+        if len(pairs) < 2:
+            return None, None, None, None
+        return pairs[0][0], pairs[0][1], pairs[1][0], pairs[1][1]
+
     def telemetry(self, ctx: ProfileContext) -> dict:
         state = super().telemetry(ctx)
+        team_a, score_a, team_b, score_b = self._broadcast_score()
         state.update(
             {
                 "play_clock_seconds": self.situation.play_clock_seconds,
@@ -167,12 +178,17 @@ class Madden2005V9Profile(Madden2005V8Profile):
                     self.situation.play_clock_seconds is not None
                     and self.situation.play_clock_seconds <= self.play_clock_urgent_seconds
                 ),
+                "goal_to_go": self.situation.goal_to_go,
                 "current_playcall_role": self.current_playcall_role.value,
                 "current_playcall_role_fresh": self._fresh_playcall_role(ctx.now),
                 "pre_snap_urgency_probes": self.pre_snap_urgency_probes,
                 "pre_snap_stale_role_downgrades": self.pre_snap_stale_role_downgrades,
                 "ocr_processing_ms": round(self.ocr.last_processing_ms, 2),
                 "ocr_runs": self.ocr.runs,
+                "broadcast_team_a": team_a,
+                "broadcast_score_a": score_a,
+                "broadcast_team_b": team_b,
+                "broadcast_score_b": score_b,
             }
         )
         return state
