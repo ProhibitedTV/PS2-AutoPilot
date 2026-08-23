@@ -1,0 +1,178 @@
+from __future__ import annotations
+
+from ps2_autopilot.controllers.base import Controller
+from ps2_autopilot.madden_ocr import MaddenOCR
+from ps2_autopilot.madden_vision import MaddenObservation
+
+from .base import ProfileContext
+from .madden2005 import MaddenPhase, Possession
+from .madden2005_v8 import Madden2005V8Profile
+
+
+class Madden2005V9Profile(Madden2005V8Profile):
+    """Broadcast/performance hardening with play-clock-aware pre-snap behavior.
+
+    Long-run traces showed stale defensive possession evidence surviving into an
+    offensive pre-snap. The old policy then waited for the opponent to snap until
+    the semantic watchdog intervened roughly twenty seconds later. v0.6.1 treats
+    play-call role evidence as per-play evidence and uses safe Cross probes before
+    the play clock can expire. On defense, Cross merely changes the selected player;
+    on offense, the same probe snaps the ball.
+    """
+
+    name = "madden2005"
+
+    def __init__(self, cfg: dict) -> None:
+        super().__init__(cfg)
+
+        # Replace the inherited OCR instance with a bounded one. This keeps the
+        # existing semantic pipeline intact while reducing CPU spikes on 1080p.
+        self.ocr = MaddenOCR(
+            enabled=bool(cfg.get("ocr_enabled", True)),
+            interval_seconds=float(cfg.get("ocr_interval_seconds", 0.85)),
+            min_width=int(cfg.get("ocr_min_width", 960)),
+            max_width=int(cfg.get("ocr_max_width", 1280)),
+            min_confidence=float(cfg.get("ocr_min_confidence", 0.42)),
+            intra_op_num_threads=int(cfg.get("ocr_intra_op_num_threads", 2)),
+            inter_op_num_threads=int(cfg.get("ocr_inter_op_num_threads", 1)),
+            use_orientation_classifier=bool(cfg.get("ocr_use_orientation_classifier", False)),
+        )
+
+        self.play_clock_urgent_seconds = max(
+            2, int(cfg.get("play_clock_urgent_seconds", 8))
+        )
+        self.pre_snap_failsafe_seconds = max(
+            self.pre_snap_wait + 0.5,
+            float(cfg.get("pre_snap_failsafe_seconds", 5.0)),
+        )
+        self.pre_snap_probe_interval_seconds = max(
+            0.55, float(cfg.get("pre_snap_probe_interval_seconds", 1.15))
+        )
+        self.pre_snap_max_failsafe_probes = max(
+            1, int(cfg.get("pre_snap_max_failsafe_probes", 3))
+        )
+        self.playcall_role_fresh_seconds = max(
+            4.0, float(cfg.get("playcall_role_fresh_seconds", 18.0))
+        )
+
+        self.current_playcall_role = Possession.UNKNOWN
+        self.current_playcall_role_at = -1e9
+        self.pre_snap_urgency_probes = 0
+        self.pre_snap_stale_role_downgrades = 0
+
+    def _transition_phase(self, new_phase: MaddenPhase, now: float) -> None:
+        old = self.phase
+        super()._transition_phase(new_phase, now)
+        if self.phase == old:
+            return
+
+        if new_phase == MaddenPhase.PLAYCALL:
+            # Role is evidence about this play-call screen, not a permanent truth.
+            # Preserve the prior label for telemetry but decay it below the
+            # authoritative-defense threshold until current-play OCR confirms it.
+            self.current_playcall_role = Possession.UNKNOWN
+            self.current_playcall_role_at = -1e9
+            self.possession_confidence = min(self.possession_confidence, 0.50)
+
+        if new_phase == MaddenPhase.PRE_SNAP:
+            self.pre_snap_urgency_probes = 0
+
+    def _observe(self, ctx: ProfileContext) -> MaddenObservation:
+        obs = super()._observe(ctx)
+
+        if self.phase == MaddenPhase.PLAYCALL and self.possession_confidence >= 0.84:
+            reason = str(getattr(self, "playcall_role_reason", ""))
+            if reason and reason not in {"none", "ambiguous", "awaiting playcall OCR"}:
+                self.current_playcall_role = self.possession
+                self.current_playcall_role_at = ctx.now
+        return obs
+
+    def _fresh_playcall_role(self, now: float) -> bool:
+        return (
+            self.current_playcall_role != Possession.UNKNOWN
+            and self.current_playcall_role_at > -1e8
+            and now - self.current_playcall_role_at <= self.playcall_role_fresh_seconds
+        )
+
+    def _safe_snap_switch_probe(self, controller: Controller, now: float, reason: str) -> str:
+        controller.neutral_sticks()
+        controller.tap("cross", 0.06)
+        self.last_snap_at = now
+        self.snap_attempts += 1
+        self.pre_snap_urgency_probes += 1
+        self.next_action_at = now + self.pre_snap_probe_interval_seconds
+        self.current_action = (
+            f"pre-snap URGENCY: {reason} -> X snap/switch probe "
+            f"{self.pre_snap_urgency_probes}/{self.pre_snap_max_failsafe_probes}"
+        )
+        return self.current_action
+
+    def _pre_snap(self, controller: Controller, now: float) -> str:
+        idle_for = max(0.0, now - self.phase_since)
+        play_clock = self.situation.play_clock_seconds
+
+        # Best signal: Madden's score bug often exposes the play clock as :15,
+        # :08, :02, etc. A Cross probe is safe for either role: offense snaps,
+        # defense changes selected player.
+        if (
+            play_clock is not None
+            and play_clock <= self.play_clock_urgent_seconds
+            and now >= self.next_action_at
+            and self.pre_snap_urgency_probes < self.pre_snap_max_failsafe_probes
+        ):
+            return self._safe_snap_switch_probe(
+                controller,
+                now,
+                f"play clock {play_clock}s",
+            )
+
+        role_is_fresh = self._fresh_playcall_role(now)
+        if (
+            self.possession == Possession.DEFENSE
+            and self.possession_confidence >= 0.62
+            and not (
+                role_is_fresh
+                and self.current_playcall_role == Possession.DEFENSE
+            )
+            and idle_for >= self.pre_snap_wait
+        ):
+            # This is the exact live failure observed in the 0.6 logs: a defensive
+            # belief with no current-playcall confirmation can make us wait until
+            # delay-of-game. Demote stale evidence so the normal unknown-role probe
+            # path can test whether Cross starts the play.
+            self.possession_confidence = min(self.possession_confidence, 0.44)
+            self.pre_snap_stale_role_downgrades += 1
+
+        # Last-resort timer independent of OCR. Even a false-positive defensive
+        # playcall can no longer hold PRE_SNAP for 20+ seconds.
+        if (
+            idle_for >= self.pre_snap_failsafe_seconds
+            and now >= self.next_action_at
+            and self.pre_snap_urgency_probes < self.pre_snap_max_failsafe_probes
+        ):
+            return self._safe_snap_switch_probe(
+                controller,
+                now,
+                f"failsafe {idle_for:.1f}s at line",
+            )
+
+        return super()._pre_snap(controller, now)
+
+    def telemetry(self, ctx: ProfileContext) -> dict:
+        state = super().telemetry(ctx)
+        state.update(
+            {
+                "play_clock_seconds": self.situation.play_clock_seconds,
+                "play_clock_urgent": (
+                    self.situation.play_clock_seconds is not None
+                    and self.situation.play_clock_seconds <= self.play_clock_urgent_seconds
+                ),
+                "current_playcall_role": self.current_playcall_role.value,
+                "current_playcall_role_fresh": self._fresh_playcall_role(ctx.now),
+                "pre_snap_urgency_probes": self.pre_snap_urgency_probes,
+                "pre_snap_stale_role_downgrades": self.pre_snap_stale_role_downgrades,
+                "ocr_processing_ms": round(self.ocr.last_processing_ms, 2),
+                "ocr_runs": self.ocr.runs,
+            }
+        )
+        return state
