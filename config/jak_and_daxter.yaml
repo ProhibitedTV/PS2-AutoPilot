@@ -8,8 +8,8 @@ controller:
   backend: virtual_gamepad
   focus_window: true
 
-# Jak recovery stays conservative. Active recovery only happens while gameplay
-# owns the controller; unknown/static states remain evidence-first and fail closed.
+# Jak recovery stays conservative. V9 handles short local stalls inside proven
+# gameplay; the global watchdog remains the slow last-resort recovery ladder.
 watchdog:
   motion_threshold: 0.006
   stuck_seconds: 25
@@ -49,10 +49,9 @@ observability:
 profile:
   name: jak_and_daxter
 
-  # V8 keeps the V7 shoreline-aware traversal but makes gameplay ownership sticky.
-  # Once gameplay has been proven, visual-only NEW GAME detection can no longer steal
-  # the controller from foliage/terrain; a camera-response probe safely reacquires a
-  # static/occluded gameplay view before a short back-turn escape.
+  # V9 keeps V8's sticky gameplay ownership and adds scene geometry plus a closed
+  # action/outcome recovery loop. Color alone no longer owns the shoreline policy,
+  # and a blocked locomotion command is handled locally instead of waiting 25 seconds.
   mode: production
   template_threshold: 0.84
   random_seed: 2001
@@ -70,7 +69,7 @@ profile:
   new_game_green_ratio_threshold: 0.04
   new_game_green_margin: 0.012
 
-  # V4 real-capture main-menu fallback. V8 restricts visual-only use to pre-gameplay
+  # V4 real-capture main-menu fallback. V8+ restricts visual-only use to pre-gameplay
   # boot states; after gameplay has been established, a real menu needs OCR evidence.
   main_menu_ocr_quorum: 3
   main_menu_visual_green_threshold: 0.12
@@ -120,9 +119,7 @@ profile:
   safe_forward_scale: 0.82
   safe_jump_scale: 0.55
 
-  # V7 shoreline/ocean guardrail. Ratios are measured only in the lower playfield,
-  # split left/center/right. When blue/cyan water becomes dominant ahead, first
-  # backtrack the route that got us there, then arc toward the drier side.
+  # Base water color cue. V9 no longer treats this ratio by itself as proof of water.
   water_hue_min: 85
   water_hue_max: 140
   water_sat_min: 45
@@ -130,12 +127,27 @@ profile:
   water_center_caution: 0.09
   water_total_caution: 0.11
   water_release_ratio: 0.045
-  water_clear_seconds: 1.0
+  water_clear_seconds: 0.65
   water_backtrack_seconds: 1.6
   water_turn_seconds: 1.4
   water_backtrack_speed: 0.72
   water_escape_turn: 0.82
   water_escape_forward: 0.28
+
+  # V9 water geometry. The live wall/leaf capture produced ~0.12 raw blue/cyan but
+  # only ~0.013 largest-component area, ~0.096 width and <0.25 maximum row coverage.
+  # Real open water should form a much broader/coherent surface before shoreline
+  # avoidance is allowed to take control.
+  water_geometry_max_width: 480
+  water_component_min_ratio: 0.020
+  water_component_min_width: 0.18
+  water_component_min_coherence: 0.16
+  water_row_coverage_threshold: 0.30
+  water_row_max_threshold: 0.42
+  water_row_band_min_fraction: 0.04
+  water_risk_confirmations_required: 2
+  water_direction_reconsider_seconds: 1.75
+  water_direction_flip_margin: 0.10
 
   # V7 mid-session attach probe. If AutoPilot is restarted while PCSX2 remains in
   # gameplay, require two reversible right-stick camera responses before ownership.
@@ -151,15 +163,33 @@ profile:
 
   # V8 lost-gameplay recovery. Once a session has already demonstrated gameplay,
   # one camera response is enough to restore ownership after the normal grace window.
-  # A successful response triggers a bounded reverse+turn to escape a wall, tree or
-  # foliage occluder. No response means likely cutscene/menu/static presentation, so
-  # movement remains neutral and the probe retries later.
   reacquire_after_seconds: 2.0
   reacquire_confirmations_required: 1
   post_reacquire_escape_seconds: 1.35
   post_reacquire_back_speed: 0.64
   post_reacquire_turn: 0.60
   post_reacquire_camera: 0.32
+
+  # V9 local obstacle/contact recovery. When movement is being commanded but visual
+  # motion stays nearly zero, reverse away, pivot, and test a new path. Alternate the
+  # side after a failed test and only escalate to a jump-turn when coherent water is
+  # not present. Successful directions are remembered briefly by the route sampler.
+  local_stuck_motion_threshold: 0.0035
+  local_stuck_trigger_seconds: 2.2
+  local_stuck_command_warmup_seconds: 0.55
+  local_stuck_reverse_seconds: 0.70
+  local_stuck_pivot_seconds: 0.80
+  local_stuck_test_seconds: 1.15
+  local_stuck_reverse_speed: 0.62
+  local_stuck_pivot_turn: 0.86
+  local_stuck_camera_turn: 0.38
+  local_stuck_test_forward: 0.58
+  local_stuck_success_motion: 0.010
+  local_stuck_success_seconds: 0.30
+  local_stuck_max_nonjump_attempts: 2
+  local_stuck_jump_turn_seconds: 0.75
+  local_stuck_cooldown_seconds: 1.4
+  local_stuck_route_memory_seconds: 5.5
 
   # L2/R2 exposes the game's normal progress HUD. Probe it periodically and let OCR
   # retain monotonic Power Cell / Orb / Scout Fly totals as reward telemetry.
