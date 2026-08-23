@@ -11,8 +11,9 @@ from .madden2005_v11 import Madden2005V11Profile
 from .madden2005_v12 import Madden2005V12Profile
 from .madden2005_v13 import Madden2005V13Profile
 from .madden2005_v14 import Madden2005V14Profile
+from .madden2005_v15 import Madden2005V15Profile
 
-Madden2005Profile = Madden2005V14Profile
+Madden2005Profile = Madden2005V15Profile
 
 __all__ = [
     "GenericChaosProfile",
@@ -29,4 +30,5 @@ __all__ = [
     "Madden2005V12Profile",
     "Madden2005V13Profile",
     "Madden2005V14Profile",
+    "Madden2005V15Profile",
 ]
