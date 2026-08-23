@@ -60,6 +60,16 @@ profile:
   aggression: 0.68
   steering_wander: 0.24
 
+  # v0.6.1 clock safety. Current-play playcall evidence is preferred, but a Cross
+  # probe is safe on either side of the ball: it snaps on offense and only changes
+  # the selected defender on defense. This prevents stale role evidence from
+  # waiting until the delay-of-game threshold.
+  play_clock_urgent_seconds: 8
+  pre_snap_failsafe_seconds: 5.0
+  pre_snap_probe_interval_seconds: 1.15
+  pre_snap_max_failsafe_probes: 3
+  playcall_role_fresh_seconds: 18.0
+
   # v0.5.2 gameplay policy: one deliberate receiver throw after a short read
   # instead of treating X as a harmless "show receiver icons" input.
   pass_read_min_seconds: 1.10
@@ -86,13 +96,18 @@ profile:
   spatial_open_confidence: 0.42
   spatial_max_age_seconds: 0.70
 
-  # Semantic OCR is deliberately slower than the 12 Hz reflex loop. v0.6.1 also
-  # bounds 1080p input to 1280px internally, disables needless text orientation
-  # classification, and caps ONNX Runtime OCR threads at 2/1.
+  # Semantic OCR is deliberately slower than the 12 Hz reflex loop. v0.6.1
+  # downsamples 1080p captures before OCR, disables unused orientation
+  # classification, and caps ONNX Runtime thread pools so it cannot burst across
+  # every logical CPU while PCSX2 and OBS are live.
   ocr_enabled: true
   ocr_interval_seconds: 0.85
   ocr_min_width: 960
+  ocr_max_width: 1280
   ocr_min_confidence: 0.42
+  ocr_intra_op_num_threads: 2
+  ocr_inter_op_num_threads: 1
+  ocr_use_orientation_classifier: false
 
   # 24/7 semantic supervision. Presentation has a deliberately larger budget so
   # normal Madden replays/cutscenes are preserved rather than treated as dead air.
