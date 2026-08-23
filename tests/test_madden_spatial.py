@@ -23,7 +23,10 @@ def field_frame(offset=0, ball_x=None):
     cv2.ellipse(frame, (297 + offset, 254), (10, 3), 0, 0, 360, (0, 230, 250), -1)
 
     if ball_x is not None:
-        cv2.circle(frame, (ball_x, 190), 3, (245, 245, 245), -1)
+        # Slightly exaggerated synthetic football: the real detector downsamples
+        # the field and rejects tiny morphology noise, so the fixture must remain a
+        # coherent moving component after that same processing path.
+        cv2.circle(frame, (ball_x, 190), 5, (245, 245, 245), -1)
     return frame
 
 
