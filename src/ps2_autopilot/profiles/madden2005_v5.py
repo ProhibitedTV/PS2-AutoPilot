@@ -32,6 +32,9 @@ class Madden2005V5Profile(Madden2005V4Profile):
         self.pause_start_attempts = 0
         self.pause_resume_attempts = 0
         self.pause_seek_steps = 0
+        self.pause_visible = False
+        self.pause_last_seen_at = -1e9
+        self.pause_resume_pending_until = -1e9
 
     @staticmethod
     def looks_like_pause_text(text: str) -> bool:
@@ -62,6 +65,9 @@ class Madden2005V5Profile(Madden2005V4Profile):
         self.pause_start_attempts = 0
         self.pause_resume_attempts = 0
         self.pause_seek_steps = 0
+        self.pause_visible = False
+        self.pause_last_seen_at = -1e9
+        self.pause_resume_pending_until = -1e9
 
     def _observe(self, ctx: ProfileContext) -> MaddenObservation:
         was_paused = self.phase == MaddenPhase.PAUSED
@@ -73,7 +79,9 @@ class Madden2005V5Profile(Madden2005V4Profile):
         # rule. Preserve the original pause timestamp so the pause watchdog and
         # recovery ladder do not restart their clocks on every OCR cycle.
         pause_visible = self.looks_like_pause_text(self.last_ocr.text)
+        self.pause_visible = pause_visible
         if pause_visible:
+            self.pause_last_seen_at = ctx.now
             self.menu_assessment = MenuAssessment(
                 MaddenScreen.PAUSED, 0.96, "pause option cluster"
             )
@@ -83,6 +91,8 @@ class Madden2005V5Profile(Madden2005V4Profile):
             elif self.phase != MaddenPhase.PAUSED:
                 self._transition_phase(MaddenPhase.PAUSED, ctx.now)
                 self._reset_pause_recovery()
+                self.pause_visible = True
+                self.pause_last_seen_at = ctx.now
 
         if self.phase in {
             MaddenPhase.MENU,
@@ -115,9 +125,23 @@ class Madden2005V5Profile(Madden2005V4Profile):
         not work, visually navigate to RESUME GAME. Cross is emitted only when the
         highlighted OCR row itself is confidently RESUME; it is never sent blindly
         because live testing showed Madden can pause with QUIT/SAVE highlighted.
+
+        Once Resume is submitted, inputs are suppressed for a short grace period.
+        Likewise, if the pause text disappears while the phase classifier catches
+        up, no menu navigation is emitted. This prevents a second Cross/Up from
+        leaking into live gameplay during the transition back to the field.
         """
 
         controller.neutral_sticks()
+
+        if now < self.pause_resume_pending_until:
+            self.current_action = "pause: resume submitted; waiting for transition"
+            return self.current_action
+
+        if not self.pause_visible and self.pause_last_seen_at > -1e8:
+            self.current_action = "pause: overlay vanished; hold inputs for reclassification"
+            return self.current_action
+
         if now < self.next_action_at:
             return self.current_action
 
@@ -135,9 +159,11 @@ class Madden2005V5Profile(Madden2005V4Profile):
             if "RESUME" in highlighted:
                 controller.tap("cross", 0.08)
                 self.pause_resume_attempts += 1
-                self.next_action_at = now + 1.55
+                self.pause_resume_pending_until = now + 2.8
+                self.next_action_at = self.pause_resume_pending_until
                 self.current_action = (
-                    f"pause: verified RESUME GAME -> CROSS {self.pause_resume_attempts}"
+                    f"pause: verified RESUME GAME -> CROSS {self.pause_resume_attempts}; "
+                    "wait for transition"
                 )
                 return self.current_action
 
@@ -247,6 +273,10 @@ class Madden2005V5Profile(Madden2005V4Profile):
                 "ocr_text": self.last_ocr.text[:220],
                 "quarter": self.situation.quarter,
                 "down": self.situation.down,
+                "pause_start_attempts": self.pause_start_attempts,
+                "pause_resume_attempts": self.pause_resume_attempts,
+                "pause_seek_steps": self.pause_seek_steps,
+                "pause_resume_pending": ctx.now < self.pause_resume_pending_until,
             }
         )
         state.update(self.menu.telemetry())
@@ -264,6 +294,8 @@ class Madden2005V5Profile(Madden2005V4Profile):
         state["pause_start_attempts"] = self.pause_start_attempts
         state["pause_resume_attempts"] = self.pause_resume_attempts
         state["pause_seek_steps"] = self.pause_seek_steps
+        state["pause_visible"] = self.pause_visible
+        state["pause_resume_pending"] = ctx.now < self.pause_resume_pending_until
         if self.last_progress_directive is not None:
             state["progress_recovery_reason"] = self.last_progress_directive.reason
             state["progress_recovery_stalled"] = round(
