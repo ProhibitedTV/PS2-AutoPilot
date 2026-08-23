@@ -7,6 +7,7 @@ from .capture import FrameGrabber
 from .config import AppConfig
 from .controllers.keyboard import KeyboardController
 from .controllers.virtual_gamepad import VirtualGamepadController
+from .observability import RuntimeObserver, TracingController
 from .overlay import OverlayServer
 from .profiles import GenericChaosProfile, Madden2005Profile
 from .profiles.base import ProfileContext
@@ -45,13 +46,27 @@ class AutopilotApp:
         controller_cfg = raw.get("controller", {})
         backend = str(controller_cfg.get("backend", "keyboard"))
         if backend == "virtual_gamepad":
-            self.controller = VirtualGamepadController()
+            base_controller = VirtualGamepadController()
         elif backend == "keyboard":
             keys = DEFAULT_KEYS | dict(controller_cfg.get("keys", {}))
-            self.controller = KeyboardController(keys)
+            base_controller = KeyboardController(keys)
         else:
             raise RuntimeError(f"Unknown controller backend: {backend}")
         self.focus_window = bool(controller_cfg.get("focus_window", True))
+
+        observability_cfg = dict(raw.get("observability", {}))
+        self.observer = RuntimeObserver(observability_cfg, project_root / "runtime")
+        if self.observer.enabled:
+            self.controller = TracingController(
+                base_controller,
+                self.observer.record_input,
+                stick_interval_seconds=float(
+                    observability_cfg.get("stick_log_interval_seconds", 0.50)
+                ),
+                stick_delta=float(observability_cfg.get("stick_log_delta", 0.08)),
+            )
+        else:
+            self.controller = base_controller
 
         wd = raw.get("watchdog", {})
         self.watchdog = MotionWatchdog(
@@ -91,6 +106,12 @@ class AutopilotApp:
     def run(self) -> None:
         period = 1.0 / max(self.config.loop_hz, 1.0)
         previous = None
+        current_frame = None
+        previous_for_ctx = None
+        last_state: dict = {}
+        last_action = "boot"
+        decision_id: int | None = None
+
         if self.focus_window:
             self.window.focus()
         if self.overlay:
@@ -101,23 +122,34 @@ class AutopilotApp:
         try:
             while True:
                 started = time.monotonic()
-                frame = self.grabber.grab()
-                motion = motion_score(previous, frame)
+                decision_id = self.observer.next_decision_id()
+                if isinstance(self.controller, TracingController):
+                    self.controller.set_decision_id(decision_id)
+
+                current_frame = self.grabber.grab()
+                motion = motion_score(previous, current_frame)
                 previous_for_ctx = previous
-                previous = frame
-                template = self.detector.best_match(frame)
+                previous = current_frame
+                template = self.detector.best_match(current_frame)
                 status = self.watchdog.update(motion)
                 ctx = ProfileContext(
-                    frame=frame, motion=motion, template=template, now=started,
+                    frame=current_frame,
+                    motion=motion,
+                    template=template,
+                    now=started,
                     previous_frame=previous_for_ctx,
                 )
 
+                watchdog_recovery = False
+                savestate_reload = False
                 if status.stuck:
+                    watchdog_recovery = True
                     action = self.profile.recover(self.controller)
                     self.watchdog.mark_recovery()
                     if self.watchdog.recoveries >= self.reload_after:
                         self._load_savestate()
                         self.watchdog.reset_recoveries()
+                        savestate_reload = True
                         action += " -> load savestate"
                 else:
                     action = self.profile.tick(self.controller, ctx)
@@ -125,9 +157,12 @@ class AutopilotApp:
                 state = {
                     "status": "running",
                     "profile": self.profile.name,
+                    "decision_id": decision_id,
                     "motion": round(motion, 4),
                     "still_seconds": round(status.still_seconds, 1),
                     "recoveries": self.watchdog.recoveries,
+                    "watchdog_recovery": watchdog_recovery,
+                    "savestate_reload": savestate_reload,
                     "template": None
                     if template is None
                     else {"name": template.name, "score": round(template.score, 3)},
@@ -137,6 +172,18 @@ class AutopilotApp:
                 telemetry = getattr(self.profile, "telemetry", None)
                 if callable(telemetry):
                     state.update(telemetry(ctx))
+
+                self.observer.record_cycle(
+                    decision_id=decision_id,
+                    frame=current_frame,
+                    previous_frame=previous_for_ctx,
+                    state=state,
+                    action=action,
+                    now=started,
+                )
+                last_state = state
+                last_action = action
+
                 if self.overlay:
                     self.overlay.write_state(state)
 
@@ -145,6 +192,16 @@ class AutopilotApp:
                     time.sleep(period - elapsed)
         except KeyboardInterrupt:
             print("Stopping...")
+        except Exception as exc:
+            self.observer.record_exception(
+                exc,
+                frame=current_frame,
+                previous_frame=previous_for_ctx,
+                state=last_state,
+                decision_id=decision_id,
+                action=last_action,
+            )
+            raise
         finally:
             self.controller.release_all()
             if self.overlay:
