@@ -110,6 +110,16 @@ profile:
   defense_contact_distance: 0.34
   defense_far_action_delay_seconds: 0.28
 
+  # v0.7.2: do not accept Madden's remembered/default matchup every game. The
+  # captured team-select layout starts on HOME; bounded UP/DOWN steps rotate home,
+  # LEFT changes focus to AWAY, then bounded UP/DOWN steps rotate away. L1/R1 are
+  # intentionally excluded so Historic Teams are never entered autonomously.
+  team_rotation_enabled: true
+  team_rotation_min_steps: 1
+  team_rotation_max_steps: 6
+  team_rotation_action_seconds: 0.42
+  team_rotation_settle_seconds: 1.10
+
   unknown_capture_seconds: 3.0
   unknown_capture_cooldown_seconds: 20.0
   max_unknown_captures: 60
