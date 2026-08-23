@@ -128,7 +128,17 @@ class ContextAwareMaddenRuntimeMonitor(MaddenRuntimeMonitor):
         return state
 
     def _stall_limit(self, telemetry: dict) -> float | None:
-        if str(telemetry.get("menu_screen") or "").lower() in {
+        phase = str(telemetry.get("phase") or "").lower()
+        screen = str(telemetry.get("menu_screen") or "").lower()
+
+        # FINAL is now owned by a dedicated, verified END GAME navigator. Generic
+        # semantic recovery used to inject Triangle/Start after ~30 seconds, which
+        # could throw the agent back into STATS/INFO and restart the presentation
+        # hold forever. Never compete with the dedicated postgame state machine.
+        if phase == "game_over" or screen == "final":
+            return None
+
+        if screen in {
             "field",
             "presentation",
             "playcall",
