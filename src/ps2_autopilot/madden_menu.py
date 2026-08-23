@@ -91,8 +91,16 @@ def classify_madden_screen(snapshot: OCRSnapshot) -> MenuAssessment:
     if _has(header, *wrong_header):
         return MenuAssessment(MaddenScreen.WRONG_MODE, 0.99, "non-Play-Now branch")
 
-    if _has(alpha, "PRESS START", "PRESS THE START"):
+    if _has(alpha, "PRESS START", "PRESS THE START", "PRESS ANY BUTTON"):
         return MenuAssessment(MaddenScreen.TITLE, 0.99, "title prompt")
+
+    # Madden 2005's attract/demo screen is visually the title flow even when
+    # OCR misses the small "Press any button" line. The first clean live OCR
+    # sample was exactly "DEMO | MADDENNFL200S" at 1920x1080. Treat that
+    # combination as TITLE so the navigator presses Start instead of eventually
+    # issuing a safe-backout Triangle on an otherwise valid boot screen.
+    if "DEMO" in alpha and _has(alpha, "MADDEN", "MADDENNFL"):
+        return MenuAssessment(MaddenScreen.TITLE, 0.96, "Madden attract/demo screen")
 
     if _has(header, "CONTROLLER SELECT", "SELECT CONTROLLER", "CHOOSE SIDE", "SELECT SIDE"):
         return MenuAssessment(MaddenScreen.CONTROLLER_SELECT, 0.97, "controller/side assignment")
