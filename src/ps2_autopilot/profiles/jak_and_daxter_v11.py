@@ -25,13 +25,17 @@ class JakAndDaxterV11Profile(JakAndDaxterV10Profile):
     * opposite-direction pulses are still used so a one-off animated scene is weak
       evidence while repeatable controller-correlated response is strong evidence;
     * a strongly coherent water surface lowers the number of required confirmations
-      by one because the live failure bundle is unambiguously an in-game swim state,
-      but water alone never grants gameplay ownership;
+      because the live failure bundle is unambiguously an in-game swim state, but
+      water alone never grants gameplay ownership;
     * no controller response still fails closed exactly as before.
 
+    The same adaptive threshold is also used when a previously proven gameplay session
+    temporarily falls back to UNKNOWN. That closes the second hole exposed by the live
+    data: a weak camera response near a wall must not strand the sticky gameplay owner.
+
     Once gameplay ownership is recovered, V9/V10 immediately regain authority, so the
-    existing coherent-water escape and local obstacle recovery can finally act on the
-    actual problem instead of being stranded behind UNKNOWN state.
+    coherent-water escape and local obstacle recovery can finally act on the actual
+    problem instead of being stranded behind UNKNOWN state.
     """
 
     def __init__(self, cfg: dict) -> None:
@@ -59,7 +63,11 @@ class JakAndDaxterV11Profile(JakAndDaxterV10Profile):
             0.20, min(0.95, float(cfg.get("attach_water_assist_ratio", 0.55)))
         )
         self.attach_water_assist_required = max(
-            1.0, min(self.attach_evidence_required, float(cfg.get("attach_water_assist_required", 1.5)))
+            1.0,
+            min(
+                self.attach_evidence_required,
+                float(cfg.get("attach_water_assist_required", 1.5)),
+            ),
         )
 
         self.attach_evidence = 0.0
@@ -76,7 +84,9 @@ class JakAndDaxterV11Profile(JakAndDaxterV10Profile):
             self.attach_evidence = 0.0
             self.attach_evidence_started_at = None
         else:
-            self.attach_evidence = max(0.0, self.attach_evidence - self.attach_evidence_decay)
+            self.attach_evidence = max(
+                0.0, self.attach_evidence - self.attach_evidence_decay
+            )
             if self.attach_evidence <= 0.0:
                 self.attach_evidence_started_at = None
 
@@ -117,9 +127,8 @@ class JakAndDaxterV11Profile(JakAndDaxterV10Profile):
     def _service_attach_probe(
         self, controller: Controller, ctx: ProfileContext
     ) -> str | None:
-        # Preserve the same scope as V7: this is only for restarting AutoPilot while
-        # PCSX2 is already inside a running session. Full boot ownership remains on the
-        # existing title/menu/opening transaction path.
+        # Only for restarting AutoPilot while PCSX2 is already inside a running
+        # session. Full boot ownership remains on title/menu/opening transactions.
         if self.campaign_launch_at is not None or self.phase == JakPhase.GAMEPLAY:
             return None
         if self.runtime_started_at is None:
@@ -139,7 +148,8 @@ class JakAndDaxterV11Profile(JakAndDaxterV10Profile):
         # scene cannot combine with a later unrelated pulse to grant ownership.
         if (
             self.attach_evidence_started_at is not None
-            and ctx.now - self.attach_evidence_started_at > self.attach_evidence_window_seconds
+            and ctx.now - self.attach_evidence_started_at
+            > self.attach_evidence_window_seconds
         ):
             self._reset_adaptive_evidence(hard=True)
 
@@ -167,7 +177,8 @@ class JakAndDaxterV11Profile(JakAndDaxterV10Profile):
             threshold = self._adaptive_probe_threshold()
             self.attach_last_threshold = threshold
             self.attach_last_delta = max(
-                0.0, self.attach_probe_peak_motion - self.attach_probe_baseline_motion
+                0.0,
+                self.attach_probe_peak_motion - self.attach_probe_baseline_motion,
             )
 
             if self.attach_probe_peak_motion >= threshold:
@@ -178,7 +189,9 @@ class JakAndDaxterV11Profile(JakAndDaxterV10Profile):
                 # Stronger pulses earn slightly more evidence, capped so a single
                 # pathological frame cannot jump directly from zero to ownership.
                 strength = self.attach_probe_peak_motion / max(threshold, 1e-6)
-                increment = min(1.25, max(0.75, 0.85 + (strength - 1.0) * 0.60))
+                increment = min(
+                    1.25, max(0.75, 0.85 + (strength - 1.0) * 0.60)
+                )
                 self.attach_evidence = min(
                     self.attach_evidence_required + 1.0,
                     self.attach_evidence + increment,
@@ -243,6 +256,119 @@ class JakAndDaxterV11Profile(JakAndDaxterV10Profile):
         self._neutralized = False
         self.current_action = "jak: adaptive attach probe; nudge camera"
         return self.current_action
+
+    def _service_lost_gameplay_probe(
+        self, controller: Controller, ctx: ProfileContext
+    ) -> str | None:
+        """Reacquire sticky gameplay with the same live-calibrated motion threshold."""
+        if not self.gameplay_session_established:
+            return None
+        if self.phase == JakPhase.GAMEPLAY:
+            self._mark_gameplay_session(ctx)
+            self._reset_attach_probe(clear_confirmations=True)
+            return None
+
+        blocker = self._gameplay_blocker()
+        if blocker:
+            self.lost_gameplay_since = None
+            self._reset_attach_probe(clear_confirmations=True)
+            return None
+
+        if self.lost_gameplay_since is None:
+            self.lost_gameplay_since = ctx.now
+            self._reset_attach_probe(clear_confirmations=True)
+            return None
+        if ctx.now - self.lost_gameplay_since < self.reacquire_after_seconds:
+            return None
+
+        if self.attach_probe_stage == "drive":
+            self.attach_probe_peak_motion = max(
+                self.attach_probe_peak_motion, float(ctx.motion)
+            )
+            if ctx.now < self.attach_probe_release_at:
+                controller.set_right_stick(
+                    self.attach_probe_direction * self.attach_probe_camera_x, 0.0
+                )
+                self._neutralized = False
+                self.current_action = "jak: adaptive lost-gameplay probe; nudge camera"
+                return self.current_action
+            controller.set_right_stick(0.0, 0.0)
+            self.attach_probe_stage = "observe"
+            self.current_action = (
+                "jak: adaptive lost-gameplay probe; observe camera response"
+            )
+            return self.current_action
+
+        if self.attach_probe_stage == "observe":
+            self.attach_probe_peak_motion = max(
+                self.attach_probe_peak_motion, float(ctx.motion)
+            )
+            threshold = self._adaptive_probe_threshold()
+            self.attach_last_threshold = threshold
+            self.attach_last_delta = max(
+                0.0,
+                self.attach_probe_peak_motion - self.attach_probe_baseline_motion,
+            )
+            if self.attach_probe_peak_motion >= threshold:
+                self.attach_probe_confirmations += 1
+                if (
+                    self.attach_probe_confirmations
+                    >= self.reacquire_confirmations_required
+                ):
+                    self.reacquire_probe_successes += 1
+                    self.attach_probe_successes += 1
+                    self.attach_probe_direction *= -1.0
+                    self.post_reacquire_escape_direction = self.attach_probe_direction
+                    self.post_reacquire_escape_until = (
+                        ctx.now + self.post_reacquire_escape_seconds
+                    )
+                    self.post_reacquire_escapes += 1
+                    self._set_phase(JakPhase.GAMEPLAY)
+                    self.last_gameplay_at = ctx.now
+                    self.gameplay_assumed_after_opening = True
+                    self._mark_gameplay_session(ctx)
+                    self._reset_attach_probe(clear_confirmations=True)
+                    return self._post_reacquire_escape(controller, ctx)
+                self.attach_probe_direction *= -1.0
+                self._reset_attach_probe(clear_confirmations=False)
+                self.attach_probe_next_at = (
+                    ctx.now + self.attach_probe_retry_seconds
+                )
+                self.current_action = (
+                    f"jak: adaptive lost-gameplay confirmation "
+                    f"{self.attach_probe_confirmations}/"
+                    f"{self.reacquire_confirmations_required}"
+                )
+                return self.current_action
+            if ctx.now < self.attach_probe_deadline:
+                self.current_action = (
+                    f"jak: adaptive lost-gameplay waiting; "
+                    f"peak={self.attach_probe_peak_motion:.4f} need={threshold:.4f}"
+                )
+                return self.current_action
+
+            self._reset_attach_probe(clear_confirmations=True)
+            self.attach_probe_next_at = ctx.now + self.attach_probe_retry_seconds
+            self.current_action = (
+                "jak: adaptive lost-gameplay probe inconclusive; hold inputs"
+            )
+            return self.current_action
+
+        if ctx.now < self.attach_probe_next_at:
+            return None
+        if float(ctx.motion) > self.attach_probe_baseline_max:
+            self.attach_probe_idle_since = None
+            return None
+        if self.attach_probe_idle_since is None:
+            self.attach_probe_idle_since = ctx.now
+            self.attach_probe_baseline_motion = float(ctx.motion)
+            return None
+        self.attach_probe_baseline_motion = max(
+            self.attach_probe_baseline_motion, float(ctx.motion)
+        )
+        if ctx.now - self.attach_probe_idle_since < self.attach_probe_idle_seconds:
+            return None
+        return self._start_reacquire_probe(controller, ctx)
 
     def telemetry(self, ctx: ProfileContext) -> dict:
         state = super().telemetry(ctx)
