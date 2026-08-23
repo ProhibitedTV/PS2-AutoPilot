@@ -17,8 +17,8 @@ def semantic_context(telemetry: dict) -> str | None:
 
     `menu_screen=unknown` is expected during ordinary field gameplay and Madden's
     broadcast presentation because the menu classifier is intentionally menu-centric.
-    It must not be treated as unresolved navigation when stronger gameplay or
-    presentation evidence is available.
+    It must not be treated as unresolved navigation when stronger gameplay,
+    presentation, or statistics evidence is available.
     """
 
     phase = str(telemetry.get("phase") or "").lower()
@@ -39,11 +39,38 @@ def semantic_context(telemetry: dict) -> str | None:
     if quarter_break:
         return "presentation"
 
+    # Stats pages are known navigation states, not mystery screens. Keep them
+    # separate from passive presentation because the policy should deliberately
+    # back out with Triangle until it reaches the parent pause/postgame menu.
+    stats_menu_hits = sum(
+        marker in compact
+        for marker in ("STATSINFO", "INDIVIDUAL", "SCORING", "DRIVESUMMARY")
+    )
+    if "STATSINFO" in compact and stats_menu_hits >= 3:
+        return "stats"
+
+    stats_table_hits = sum(
+        marker in compact
+        for marker in (
+            "GAMESTATS",
+            "TOTALOFFENSE",
+            "RUSHINGYARDS",
+            "PASSINGYARDS",
+            "FIRSTDOWNS",
+            "PRYARDS",
+            "KRYARDS",
+            "TOTALYARDS",
+            "GIVEAWAYS",
+            "TAKEAWAYS",
+        )
+    )
+    if ("GAMESTATS" in compact and stats_table_hits >= 3) or stats_table_hits >= 5:
+        return "stats"
+
     # Live calibration produced normal Madden presentation screens such as
-    # Game Stats / Current Drive and the Instant Replay control overlay. These
-    # are broadcast content, not navigation failures. Avoid treating the pause
-    # menu's single INSTANT REPLAY option as an active replay by requiring
-    # stronger companion markers.
+    # Current Drive and the Instant Replay control overlay. These are broadcast
+    # content, not navigation failures. Avoid treating the pause menu's single
+    # INSTANT REPLAY option as an active replay by requiring companion markers.
     if any(marker in compact for marker in ("CURRENTDRIVE", "TIMEOFPOSSESSION", "HIDECONTROLS")):
         return "presentation"
     replay_hits = sum(
@@ -51,12 +78,6 @@ def semantic_context(telemetry: dict) -> str | None:
         for marker in ("INSTANTREPLAY", "REWIND", "FORWARD", "BACKWARD", "HIDECONTROLS")
     )
     if replay_hits >= 2:
-        return "presentation"
-    stats_hits = sum(
-        marker in compact
-        for marker in ("GAMESTATS", "CURRENTDRIVE", "TIMEOFPOSSESSION")
-    )
-    if stats_hits >= 2:
         return "presentation"
 
     try:
@@ -111,6 +132,7 @@ class ContextAwareMaddenRuntimeMonitor(MaddenRuntimeMonitor):
             "field",
             "presentation",
             "playcall",
+            "stats",
         }:
             return None
         return super()._stall_limit(telemetry)
