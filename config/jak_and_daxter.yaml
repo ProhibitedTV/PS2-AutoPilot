@@ -8,8 +8,8 @@ controller:
   backend: virtual_gamepad
   focus_window: true
 
-# Jak's production watchdog is conservative. V3 only runs active recovery while
-# gameplay owns the controller; menus/cutscenes still get a neutral hold.
+# Jak recovery stays conservative. Active recovery only happens while gameplay
+# owns the controller; unknown/static states remain evidence-first and fail closed.
 watchdog:
   motion_threshold: 0.006
   stuck_seconds: 25
@@ -49,10 +49,9 @@ observability:
 profile:
   name: jak_and_daxter
 
-  # V3 production mode keeps the verified title/main-menu gates from V2, then
-  # preserves unknown presentation/save screens and only owns explicit gameplay.
-  # The first live New Game save-file screen is intentionally still fail-closed
-  # until its exact selection semantics are calibrated from a real capture.
+  # V4 keeps the production policy from V3 but hardens the boot/menu boundary using
+  # tolerant OCR plus a visual signature for the real lime-green NEW GAME selection.
+  # Unknown states still fail closed and become calibration evidence.
   mode: production
   template_threshold: 0.84
   random_seed: 2001
@@ -70,10 +69,21 @@ profile:
   new_game_green_ratio_threshold: 0.04
   new_game_green_margin: 0.012
 
+  # V4 real-capture main-menu fallback. The selected NEW GAME row should contain a
+  # strong lime-green text signal while LOAD GAME / OPTIONS / BACK remain neutral.
+  # A visual-only match is accepted only after the screen is stable; partial OCR can
+  # promote it immediately. These values were calibrated from a real 1920x1080 PCSX2
+  # capture and use normalized ROIs so they scale with the render window.
+  main_menu_ocr_quorum: 3
+  main_menu_visual_green_threshold: 0.12
+  main_menu_visual_competing_max: 0.035
+  main_menu_visual_margin: 0.08
+  main_menu_visual_stable_motion: 0.02
+
   # The opening is presentation-heavy and New Game first enters save-file
-  # selection. The timer is therefore only a conservative lower bound; unknown
-  # scenes also need motion evidence and no menu/save OCR before gameplay can own
-  # the controller without a calibrated gameplay template.
+  # selection. The timer is only a conservative lower bound; unknown scenes also
+  # need motion evidence and no menu/save OCR before gameplay can own the controller
+  # without a calibrated gameplay template.
   opening_cinematic_hold_seconds: 390
   opening_gameplay_motion_threshold: 0.012
   gameplay_grace_seconds: 8.0
@@ -91,8 +101,8 @@ profile:
   production_jump_probability: 0.18
   double_jump_probability: 0.65
 
-  # L2/R2 exposes the game's normal progress HUD. Probe it periodically and let
-  # OCR retain monotonic Power Cell / Orb / Scout Fly totals as reward telemetry.
+  # L2/R2 exposes the game's normal progress HUD. Probe it periodically and let OCR
+  # retain monotonic Power Cell / Orb / Scout Fly totals as reward telemetry.
   progress_probe_initial_delay_seconds: 20
   progress_probe_seconds: 120
   progress_probe_hold_seconds: 1.25
