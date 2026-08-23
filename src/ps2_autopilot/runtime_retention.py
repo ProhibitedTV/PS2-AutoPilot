@@ -35,8 +35,8 @@ class RuntimeRetention:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.max_total_bytes = max(32 * 1024 * 1024, int(float(max_total_mb) * 1024 * 1024))
-        self.max_failure_bundles = max(5, int(max_failure_bundles))
-        self.max_unknown_captures = max(10, int(max_unknown_captures))
+        self.max_failure_bundles = max(1, int(max_failure_bundles))
+        self.max_unknown_captures = max(1, int(max_unknown_captures))
         self.prune_interval_seconds = max(10.0, float(prune_interval_seconds))
         self.last_prune_at = -1e9
 
