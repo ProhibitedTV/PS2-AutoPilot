@@ -4,6 +4,7 @@ from dataclasses import replace
 import re
 
 from ps2_autopilot.controllers.base import Controller
+from ps2_autopilot.madden_menu import MaddenScreen, MenuAssessment
 from ps2_autopilot.madden_ocr import MaddenOCR
 from ps2_autopilot.madden_vision import MaddenObservation
 
@@ -93,6 +94,27 @@ class Madden2005V9Profile(Madden2005V8Profile):
 
     def _observe(self, ctx: ProfileContext) -> MaddenObservation:
         obs = super()._observe(ctx)
+
+        # Live v0.6.1 OCR exposed Madden's native banner as OFFENSEPICKAPLAY.
+        # The generic classifier did not include this wording, so a valid playcall
+        # screen fell into MENU/UNKNOWN recovery and could receive Triangle. Treat
+        # whitespace/punctuation-insensitive PICK A PLAY as authoritative playcall
+        # evidence and bind OFFENSE/DEFENSE to this specific play.
+        compact = re.sub(r"[^A-Z]", "", self.last_ocr.text.upper())
+        if "PICKAPLAY" in compact:
+            self.menu_assessment = MenuAssessment(
+                MaddenScreen.PLAYCALL,
+                0.98,
+                "Madden pick-a-play banner",
+            )
+            if self.phase != MaddenPhase.PLAYCALL:
+                self._transition_phase(MaddenPhase.PLAYCALL, ctx.now)
+            if "OFFENSE" in compact:
+                self._set_possession(Possession.OFFENSE, 0.97)
+                self.playcall_role_reason = "OFFENSE PICK A PLAY"
+            elif "DEFENSE" in compact:
+                self._set_possession(Possession.DEFENSE, 0.97)
+                self.playcall_role_reason = "DEFENSE PICK A PLAY"
 
         # A global bare-ordinal fallback can encounter down text such as
         # "1ST AND 10". Only keep that quarter when the score bug supplied a
