@@ -28,12 +28,19 @@ class Madden2005V11Profile(Madden2005V10Profile):
 
     def _navigation_context(self) -> str | None:
         obs = self.last_observation
+        spatial = getattr(self, "last_spatial", None)
         state = {
             "phase": self.phase.value,
             "menu_screen": self.menu_assessment.screen.value,
             "game_state": None if obs is None else obs.state.value,
             "field_green": None if obs is None else obs.green_ratio,
             "ocr_text": self.last_ocr.text,
+            "spatial_players": 0 if spatial is None else spatial.player_count,
+            "spatial_fresh": bool(
+                spatial is not None
+                and getattr(spatial, "available", False)
+                and getattr(self, "last_spatial_at", -1e9) > -1e8
+            ),
         }
         return semantic_context(state)
 
@@ -49,7 +56,7 @@ class Madden2005V11Profile(Madden2005V10Profile):
             self.navigation_unknown_suppressed += 1
             self.next_action_at = max(self.next_action_at, now + 0.40)
             if context == "presentation":
-                self.current_action = "presentation: known quarter/halftime break; hold inputs"
+                self.current_action = "presentation: known replay/stats/break context; hold inputs"
             elif context == "playcall":
                 self.current_action = "playcall: known PICK A PLAY context; hold for classifier"
             else:
@@ -82,7 +89,7 @@ class Madden2005V11Profile(Madden2005V10Profile):
 
         # Viewer/debug console should describe the actual game context rather than
         # shouting UNKNOWN simply because the menu classifier has nothing to do on
-        # a football field or an end-of-quarter presentation card.
+        # a football field or a normal Madden presentation screen.
         if raw_screen == "unknown" and context is not None:
             state["menu_screen"] = context
             if context == "field":
@@ -90,7 +97,7 @@ class Madden2005V11Profile(Madden2005V10Profile):
                 confidence = float(state.get("possession_confidence") or 0.0)
                 state["menu_reason"] = f"active field; {role} {confidence:.0%}"
             elif context == "presentation":
-                state["menu_reason"] = "recognized quarter/halftime presentation"
+                state["menu_reason"] = "recognized replay/stats/quarter presentation"
             else:
                 state["menu_reason"] = "recognized playcall context"
         return state
