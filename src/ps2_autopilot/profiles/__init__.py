@@ -1,4 +1,5 @@
 from .generic_chaos import GenericChaosProfile
+from .jak_and_daxter import JakAndDaxterProfile, JakPhase
 from .madden2005_v4 import Madden2005V4Profile
 from .madden2005_v5 import Madden2005V5Profile
 from .madden2005_v6 import Madden2005V6Profile
@@ -22,8 +23,18 @@ from .madden2005_v22 import Madden2005V22Profile
 
 Madden2005Profile = Madden2005V22Profile
 
+from .registry import (  # noqa: E402
+    ProfileSpec,
+    build_profile,
+    canonical_profile_name,
+    get_profile_spec,
+    list_profile_specs,
+)
+
 __all__ = [
     "GenericChaosProfile",
+    "JakAndDaxterProfile",
+    "JakPhase",
     "Madden2005Profile",
     "Madden2005V4Profile",
     "Madden2005V5Profile",
@@ -45,4 +56,9 @@ __all__ = [
     "Madden2005V20Profile",
     "Madden2005V21Profile",
     "Madden2005V22Profile",
+    "ProfileSpec",
+    "build_profile",
+    "canonical_profile_name",
+    "get_profile_spec",
+    "list_profile_specs",
 ]

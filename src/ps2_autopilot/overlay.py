@@ -11,14 +11,9 @@ import time
 class OverlayServer:
     """Tiny local HTTP server for the OBS browser source.
 
-    The gameplay loop runs much faster than a broadcast overlay needs to refresh.
-    State writes are therefore rate-limited so the overlay does not turn a 12 Hz
-    control loop into a 12 Hz disk-write loop. Explicit startup/shutdown writes can
-    bypass the limiter with ``force=True``.
-
-    The live HTTP endpoint is memory-backed. ``state.json`` is still published as a
-    compatibility/debug artifact, but a transient Windows file lock must never be
-    able to crash the gameplay process.
+    State is memory-backed so transient Windows file locks cannot interrupt gameplay.
+    ``index_file`` lets each game expose a viewer-facing layout without making the
+    application shell or default URL game-specific.
     """
 
     def __init__(
@@ -28,6 +23,7 @@ class OverlayServer:
         root: Path,
         runtime: Path,
         state_hz: float = 4.0,
+        index_file: str = "index.html",
     ) -> None:
         self.host = host
         self.port = port
@@ -38,12 +34,10 @@ class OverlayServer:
         self.server: ThreadingHTTPServer | None = None
         hz = max(0.5, min(10.0, float(state_hz)))
         self.state_interval_seconds = 1.0 / hz
+        self.index_file = Path(str(index_file or "index.html")).name
         self._last_state_write = -1e9
         self._state_lock = threading.Lock()
         self._state_payload = "{}"
-
-        # Best-effort disk-publish diagnostics. The overlay continues serving the
-        # newest in-memory state even when Windows temporarily refuses os.replace.
         self.state_write_retries = 0
         self.state_write_failures = 0
         self.state_write_last_error: str | None = None
@@ -55,8 +49,6 @@ class OverlayServer:
     def _record_state_write_failure(self, exc: OSError) -> None:
         self.state_write_failures += 1
         self.state_write_last_error = f"{type(exc).__name__}: {exc}"
-        # Keep the console useful during a long soak without turning a noisy file
-        # locker into log spam.
         if self.state_write_failures == 1 or self.state_write_failures % 25 == 0:
             print(
                 "[overlay] state.json publish skipped after transient file error; "
@@ -65,8 +57,6 @@ class OverlayServer:
             )
 
     def _persist_state_file(self, payload: str) -> bool:
-        # A per-process/per-thread temporary name avoids collisions with stale
-        # ``state.tmp`` handles left behind by a previous supervised process.
         tmp = self.runtime / f".state-{os.getpid()}-{threading.get_ident()}.tmp"
         try:
             tmp.write_text(payload, encoding="utf-8")
@@ -79,8 +69,6 @@ class OverlayServer:
                     self.state_write_retries += 1
                     self.state_write_last_error = f"{type(exc).__name__}: {exc}"
                     if attempt < 2:
-                        # Keep the total retry budget small enough that overlay I/O
-                        # cannot materially steal time from PCSX2/controller work.
                         time.sleep(0.01 * (attempt + 1))
                         continue
                     self._record_state_write_failure(exc)
@@ -98,18 +86,11 @@ class OverlayServer:
         now = time.monotonic()
         if not force and now - self._last_state_write < self.state_interval_seconds:
             return False
-
-        # Compact JSON matters here because this state is refreshed throughout a
-        # long stream. OBS does not need pretty-printed state.
         payload = json.dumps(state, separators=(",", ":"), ensure_ascii=False, default=str)
         with self._state_lock:
-            # Re-check after acquiring the lock in case two callers raced.
             now = time.monotonic()
             if not force and now - self._last_state_write < self.state_interval_seconds:
                 return False
-
-            # Update the authoritative live payload first. Disk publication is only
-            # a compatibility/debug mirror and is explicitly best-effort.
             self._state_payload = payload
             self._last_state_write = now
             self._persist_state_file(payload)
@@ -148,12 +129,10 @@ class OverlayServer:
             def translate_path(self, path: str) -> str:
                 clean_path = path.split("?", 1)[0].split("#", 1)[0]
                 if clean_path == "/state.json":
-                    # GET/HEAD are served from memory above; keep this mapping for
-                    # compatibility with any inherited handler behavior.
                     return str(runtime / "state.json")
                 clean = clean_path.lstrip("/")
                 if not clean:
-                    clean = "index.html"
+                    clean = owner.index_file
                 return str(root / clean)
 
             def log_message(self, fmt: str, *args: object) -> None:

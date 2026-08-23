@@ -2,7 +2,16 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-echo [PS2 AutoPilot] 24/7 Madden runner
+set "CONFIG=%~1"
+if "%CONFIG%"=="" set "CONFIG=config\madden2005.yaml"
+
+if not exist "%CONFIG%" (
+  echo [ERROR] Config not found: %CONFIG%
+  exit /b 1
+)
+
+echo [PS2 AutoPilot] 24/7 runner
+echo [PS2 AutoPilot] Config: %CONFIG%
 
 if not exist ".venv\Scripts\python.exe" (
   echo [INFO] No virtual environment found. Running bootstrap first...
@@ -15,8 +24,7 @@ if errorlevel 1 goto :failed
 
 rem A manually launched runner marks a new stream session. Clear the previous
 rem session's logs/screenshots once here, before the restart loop. Automatic
-rem crash restarts jump back to :run and therefore preserve the current crash
-rem evidence instead of immediately deleting it.
+rem crash restarts jump back to :run and therefore preserve current crash evidence.
 echo [PS2 AutoPilot] Clearing previous runtime artifacts...
 python -m ps2_autopilot.runtime_retention --root runtime --clear --max-total-mb 300 --max-failures 30 --max-unknown 60
 if errorlevel 1 goto :failed
@@ -25,8 +33,8 @@ if errorlevel 1 goto :failed
 if exist "runtime\STOP24X7" goto :stopped
 
 echo.
-echo [%date% %time%] Starting Madden AutoPilot...
-ps2-autopilot --config config\madden2005.yaml
+echo [%date% %time%] Starting AutoPilot with %CONFIG%...
+ps2-autopilot --config "%CONFIG%"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 rem Ctrl+C is handled by AutoPilot as a clean exit. Do not immediately restart
