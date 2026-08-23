@@ -49,9 +49,10 @@ observability:
 profile:
   name: jak_and_daxter
 
-  # V7 keeps the real boot/save gates from V4-V6, then adds safer autonomous
-  # traversal and a reversible camera-response probe so the runtime can reacquire an
-  # already-running gameplay session after a supervised restart.
+  # V8 keeps the V7 shoreline-aware traversal but makes gameplay ownership sticky.
+  # Once gameplay has been proven, visual-only NEW GAME detection can no longer steal
+  # the controller from foliage/terrain; a camera-response probe safely reacquires a
+  # static/occluded gameplay view before a short back-turn escape.
   mode: production
   template_threshold: 0.84
   random_seed: 2001
@@ -69,8 +70,8 @@ profile:
   new_game_green_ratio_threshold: 0.04
   new_game_green_margin: 0.012
 
-  # V4 real-capture main-menu fallback. The selected NEW GAME row should contain a
-  # strong lime-green text signal while LOAD GAME / OPTIONS / BACK remain neutral.
+  # V4 real-capture main-menu fallback. V8 restricts visual-only use to pre-gameplay
+  # boot states; after gameplay has been established, a real menu needs OCR evidence.
   main_menu_ocr_quorum: 3
   main_menu_visual_green_threshold: 0.12
   main_menu_visual_competing_max: 0.035
@@ -136,10 +137,8 @@ profile:
   water_escape_turn: 0.82
   water_escape_forward: 0.28
 
-  # If AutoPilot itself is restarted while PCSX2 remains in gameplay, V7 does not
-  # blindly claim the unknown screen. It waits for a relatively quiet frame, nudges
-  # only the right stick, and requires two camera-motion responses before restoring
-  # gameplay ownership. Menus/save screens remain blockers.
+  # V7 mid-session attach probe. If AutoPilot is restarted while PCSX2 remains in
+  # gameplay, require two reversible right-stick camera responses before ownership.
   attach_probe_after_seconds: 4.0
   attach_probe_idle_seconds: 0.8
   attach_probe_baseline_max: 0.020
@@ -149,6 +148,18 @@ profile:
   attach_probe_observe_seconds: 0.80
   attach_probe_retry_seconds: 1.5
   attach_probe_confirmations_required: 2
+
+  # V8 lost-gameplay recovery. Once a session has already demonstrated gameplay,
+  # one camera response is enough to restore ownership after the normal grace window.
+  # A successful response triggers a bounded reverse+turn to escape a wall, tree or
+  # foliage occluder. No response means likely cutscene/menu/static presentation, so
+  # movement remains neutral and the probe retries later.
+  reacquire_after_seconds: 2.0
+  reacquire_confirmations_required: 1
+  post_reacquire_escape_seconds: 1.35
+  post_reacquire_back_speed: 0.64
+  post_reacquire_turn: 0.60
+  post_reacquire_camera: 0.32
 
   # L2/R2 exposes the game's normal progress HUD. Probe it periodically and let OCR
   # retain monotonic Power Cell / Orb / Scout Fly totals as reward telemetry.
