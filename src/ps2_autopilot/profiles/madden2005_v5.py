@@ -3,7 +3,12 @@ from __future__ import annotations
 import time
 
 from ps2_autopilot.controllers.base import Controller
-from ps2_autopilot.madden_menu import MenuHighlight, detect_menu_highlight
+from ps2_autopilot.madden_menu import (
+    MaddenScreen,
+    MenuAssessment,
+    MenuHighlight,
+    detect_menu_highlight,
+)
 from ps2_autopilot.madden_runtime import MaddenRuntimeMonitor, RuntimeDirective
 from ps2_autopilot.madden_vision import MaddenObservation, MaddenVisualState
 
@@ -26,9 +31,40 @@ class Madden2005V5Profile(Madden2005V4Profile):
         self.pause_start_attempts = 0
         self.pause_resume_attempts = 0
 
+    @staticmethod
+    def looks_like_pause_text(text: str) -> bool:
+        """Recognize Madden's pause overlay from several imperfect OCR fragments."""
+
+        alpha = text.upper().replace("0", "O").replace("1", "I").replace("5", "S")
+        if "PAUSE" in alpha or "PAUSED" in alpha:
+            return True
+        markers = (
+            "RESUME GAME",
+            "RESUME",
+            "INSTANT REPLAY",
+            "GAME STATS",
+            "COACHING OPTIONS",
+            "SETTINGS",
+            "QUIT GAME",
+            "QUIT",
+        )
+        hits = sum(1 for marker in markers if marker in alpha)
+        # Requiring two independent menu items avoids interpreting an ordinary
+        # gameplay/settings label as the pause overlay.
+        return hits >= 2
+
     def _observe(self, ctx: ProfileContext) -> MaddenObservation:
         old_phase = self.phase
         obs = super()._observe(ctx)
+
+        # Live testing found a pause menu that could survive because OCR did not
+        # always read the small PAUSE header. The option list itself is far more
+        # stable, so v0.5 treats that combination as authoritative.
+        if self.looks_like_pause_text(self.last_ocr.text):
+            self.menu_assessment = MenuAssessment(MaddenScreen.PAUSED, 0.96, "pause option cluster")
+            if self.phase != MaddenPhase.PAUSED:
+                self._transition_phase(MaddenPhase.PAUSED, ctx.now)
+
         if self.phase in {MaddenPhase.MENU, MaddenPhase.TRANSITION, MaddenPhase.GAME_OVER, MaddenPhase.PAUSED}:
             self.menu_highlight = detect_menu_highlight(ctx.frame, self.last_ocr)
         else:
