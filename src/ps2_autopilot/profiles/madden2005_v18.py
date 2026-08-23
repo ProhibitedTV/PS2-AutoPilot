@@ -24,6 +24,11 @@ class Madden2005V18Profile(Madden2005V17Profile):
 
     def __init__(self, cfg: dict) -> None:
         super().__init__(cfg)
+        # v9 constructs the OCR instance so older profiles stay compatible. v18
+        # owns the new runtime mode switches before the first frame is observed.
+        self.ocr.async_enabled = bool(cfg.get("ocr_async_enabled", True))
+        self.ocr.bootstrap_sync = bool(cfg.get("ocr_bootstrap_sync", True))
+
         self.defense_contact_distance = max(
             0.12, min(0.80, float(cfg.get("defense_contact_distance", 0.34)))
         )
@@ -57,11 +62,6 @@ class Madden2005V18Profile(Madden2005V17Profile):
         spatial = self.last_spatial
         self.defense_last_target_distance = None
 
-        # If the controlled-player marker and target are both strong, distance is
-        # better evidence for tackle timing than a random roll. While still far
-        # away, let the existing spatial steering close the gap without spending a
-        # dive/strip/play-ball input. Low-confidence scenes keep the proven parent
-        # cadence unchanged.
         if (
             self._spatial_fresh(now)
             and spatial.controlled is not None
@@ -73,9 +73,12 @@ class Madden2005V18Profile(Madden2005V17Profile):
             distance = math.hypot(dx, dy)
             self.defense_last_target_distance = distance
             if distance > self.defense_contact_distance and now >= self.next_action_at:
+                # Parent policies still perform all steering. Moving the action
+                # deadline forward simply prevents a random contact button while
+                # high-confidence geometry says the controlled defender is far.
                 self.next_action_at = now + self.defense_far_action_delay_seconds
                 self.defense_action_holds += 1
-                action = super()._defense_live(controller, obs, now)
+                super()._defense_live(controller, obs, now)
                 self.current_action = (
                     f"defense: close pursuit ({distance:.2f} from target); hold contact move"
                 )
