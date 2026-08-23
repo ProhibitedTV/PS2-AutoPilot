@@ -7,15 +7,17 @@
   <style>
     *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}
     body{font-family:Consolas,"Courier New",monospace;color:#eef8ff}
-    .hud{position:absolute;left:22px;bottom:22px;min-width:470px;max-width:690px;padding:14px 16px;border:1px solid rgba(160,225,255,.7);background:rgba(3,10,18,.80);box-shadow:0 0 24px rgba(90,205,255,.18);clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 18px))}
-    .title{font-size:18px;letter-spacing:3px;font-weight:700;margin-bottom:8px}.row{display:flex;justify-content:space-between;gap:30px;font-size:13px;line-height:1.58}.k{opacity:.62}.v{text-align:right}.strong{font-weight:700}.sep{height:1px;background:rgba(160,225,255,.20);margin:7px 0}.pulse{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:8px;animation:pulse 1s infinite}.ocr{max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@keyframes pulse{50%{opacity:.25}}
+    .hud{position:absolute;left:22px;bottom:22px;min-width:500px;max-width:760px;padding:14px 16px;border:1px solid rgba(160,225,255,.7);background:rgba(3,10,18,.80);box-shadow:0 0 24px rgba(90,205,255,.18);clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 18px))}
+    .title{font-size:18px;letter-spacing:3px;font-weight:700;margin-bottom:8px}.row{display:flex;justify-content:space-between;gap:30px;font-size:13px;line-height:1.58}.k{opacity:.62}.v{text-align:right}.strong{font-weight:700}.sep{height:1px;background:rgba(160,225,255,.20);margin:7px 0}.pulse{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:8px;animation:pulse 1s infinite}.ocr{max-width:480px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@keyframes pulse{50%{opacity:.25}}
   </style>
 </head>
 <body>
   <div class="hud">
-    <div class="title"><span class="pulse"></span>PS2 AUTOPILOT // MADDEN 05</div>
+    <div class="title"><span class="pulse"></span>PS2 AUTOPILOT // MADDEN 05 // 24H</div>
     <div class="row"><span class="k">STATUS</span><span class="v" id="status">BOOTING</span></div>
     <div class="row"><span class="k">SEMANTIC SCREEN</span><span class="v strong" id="menu_screen">—</span></div>
+    <div class="row"><span class="k">HIGHLIGHT</span><span class="v" id="menu_highlight">—</span></div>
+    <div class="row"><span class="k">MENU TXN</span><span class="v" id="menu_txn">—</span></div>
     <div class="row"><span class="k">PHASE</span><span class="v strong" id="phase">—</span></div>
     <div class="row"><span class="k">SITUATION</span><span class="v strong" id="situation">—</span></div>
     <div class="row"><span class="k">ROLE</span><span class="v strong" id="role">—</span></div>
@@ -25,11 +27,16 @@
     <div class="row"><span class="k">OCR</span><span class="v ocr" id="ocr_text">—</span></div>
     <div class="row"><span class="k">RAW VISION</span><span class="v" id="game_state">—</span></div>
     <div class="row"><span class="k">FIELD / TARGET X,Y</span><span class="v" id="tracking">—</span></div>
-    <div class="row"><span class="k">MOTION / STILL</span><span class="v" id="motion_line">—</span></div>
+    <div class="row"><span class="k">MOTION / PIXEL STILL</span><span class="v" id="motion_line">—</span></div>
+    <div class="row"><span class="k">SEMANTIC STILL / RECOVERY</span><span class="v" id="semantic_line">—</span></div>
     <div class="row"><span class="k">PLAYS</span><span class="v" id="plays">—</span></div>
     <div class="row"><span class="k">PASS / TACKLE / KICK</span><span class="v" id="stats">—</span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="k">24/7 GAMES</span><span class="v strong" id="games">—</span></div>
+    <div class="row"><span class="k">MENU VERIFIED / FAIL</span><span class="v" id="menu_verify">—</span></div>
+    <div class="row"><span class="k">UNKNOWN CAPTURES</span><span class="v" id="unknowns">—</span></div>
     <div class="row"><span class="k">MENU ESCAPES</span><span class="v" id="menu_escapes">—</span></div>
-    <div class="row"><span class="k">RECOVERIES</span><span class="v" id="recoveries">—</span></div>
+    <div class="row"><span class="k">MOTION RECOVERIES</span><span class="v" id="recoveries">—</span></div>
   </div>
 <script>
 const set=(id,v)=>document.getElementById(id).textContent=v ?? '—';
@@ -39,6 +46,8 @@ async function refresh(){
     const r=await fetch('/state.json?_='+Date.now(),{cache:'no-store'});const s=await r.json();
     set('status',(s.status||'UNKNOWN').toUpperCase());
     set('menu_screen',`${(s.menu_screen||'—').toUpperCase()} ${s.menu_confidence==null?'':Math.round(s.menu_confidence*100)+'%'}`);
+    set('menu_highlight',s.menu_highlight?`${s.menu_highlight} ${Math.round((s.menu_highlight_confidence||0)*100)}%`:'—');
+    set('menu_txn',s.menu_pending?`${s.menu_pending} -> ${(s.menu_expected||[]).join('/')}`:'IDLE');
     set('phase',`${(s.phase||'—').toUpperCase()} ${s.phase_age==null?'':`(${s.phase_age}s)`}`);
     set('situation',(s.situation||'UNKNOWN').toUpperCase());
     set('role',`${(s.possession||'unknown').toUpperCase()}  ${Math.round((s.possession_confidence||0)*100)}%`);
@@ -48,8 +57,12 @@ async function refresh(){
     set('game_state',s.game_state);
     set('tracking',`${f(s.field_center)} / ${f(s.motion_target)}, ${f(s.motion_target_y)}`);
     set('motion_line',`${f(s.motion,4)} / ${s.still_seconds==null?'—':s.still_seconds+'s'}`);
+    set('semantic_line',`${s.semantic_still_seconds??0}s / L${s.progress_recovery_level??0}`);
     set('plays',`${s.plays_completed??0} complete / ${s.plays_started??0} started`);
     set('stats',`${s.pass_attempts??0} / ${s.tackle_attempts??0} / ${s.kicks??0}`);
+    set('games',`${s.session_games_completed??0} complete / ${s.session_games_started??0} started`);
+    set('menu_verify',`${s.menu_verified_transitions??0} / ${s.menu_transaction_failures??0}  (retry ${s.menu_transaction_retries??0})`);
+    set('unknowns',s.session_unknown_captures??0);
     set('menu_escapes',s.menu_escapes??0);
     set('recoveries',s.recoveries);
   }catch(_){}

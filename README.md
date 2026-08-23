@@ -4,28 +4,28 @@ Windows-first autonomous PCSX2 gameplay framework for unattended livestreams.
 
 The first real target is **Madden NFL 2005 (PS2)**. AutoPilot captures the active PCSX2 render, reads the game screen, drives a virtual controller, recovers from dead air, and publishes its internal state to an OBS browser overlay.
 
-## v0.4 — semantic Madden agent
+## v0.5 — verified menus + 24/7 supervision
 
-The first live test proved the controller chain worked, but also exposed the biggest problem with v0.3: random menu input happily created a Franchise and entered the **Select Drill/Player → Pocket Presence** path.
+v0.5 is focused on surviving unattended operation rather than merely pressing buttons until Madden eventually accepts them.
 
-v0.4 replaces that behavior with a semantic layer:
+New in this round:
 
-- optional local OCR using RapidOCR/ONNX Runtime; no cloud API is required
-- OCR frames are upscaled before inference so older PCSX2 builds with small client captures remain readable
-- recognizes title, Play Now/main menu, team select, controller select, matchup/settings, coin toss, play calling, kick meter, pause/final screens, dialogs, and known wrong-mode screens
-- treats `FRANCHISE SETUP`, `SELECT DRILL/PLAYER`, `POCKET PRESENCE`, Training Camp, Mini Camp, Madden 101, and similar branches as **escape states**
-- wrong-mode recovery backs toward the title screen instead of confirming deeper into a menu
-- after a recognized title screen, it uses the main menu's default **Play Now** route instead of menu RNG
-- parses down/distance, quarter, and game clock when OCR can read them
-- uses down/distance to bias offensive play intent toward run or pass
-- play calling no longer wanders around with random D-pad input
-- passing keeps the QB in the pocket, brings up receiver icons, chooses among all five receiver buttons, takes control of the receiver, and attempts a catch
-- rushing adds sprint, jukes, spin, stiff arms, ball protection, and situational dives
-- defense pursues a two-dimensional motion target and mixes switch-nearest-ball, sprint/shed, tackle, play-ball, strip, rush moves, and Hit Stick attempts
-- kicking keeps the three-stage X timing: start meter, stop power, stop accuracy
-- OBS now exposes semantic screen, OCR text, situation, role confidence, play plan, menu escapes, and tracking data
+- menu actions are transactional: press -> observe -> verify the expected destination
+- failed menu transitions retry before falling back toward a known-safe screen
+- OCR geometry plus OpenCV are used to estimate the currently highlighted menu row
+- the main menu can move the selection toward `PLAY NOW` instead of assuming it is already highlighted
+- unknown menu screens never blindly confirm after a long timeout; the safe default is to back out
+- unknown states are automatically captured to `runtime/unknown/` with a PNG and matching JSON metadata
+- a semantic-progress watchdog detects when the bot is making no useful progress even if pixels are still moving
+- recovery escalation is separate from the old raw-motion watchdog
+- persistent `runtime/session.json` tracks game starts/completions and recovery counters
+- `runtime/madden-events.jsonl` records state transitions and controller actions for postmortem analysis
+- the OBS HUD shows highlighted row, pending/expected menu transaction, semantic-stall time, verified transitions, failures, unknown captures, and 24/7 game counts
+- pause recovery is explicit: Start is attempted first, then Cross on the normal Resume Game selection if Start does not clear the pause overlay
+- pause detection also recognizes clusters such as `RESUME GAME`, `INSTANT REPLAY`, `GAME STATS`, `SETTINGS`, and `QUIT GAME` when OCR misses the small PAUSE header
+- `run24x7.cmd` restarts AutoPilot after an unexpected process failure while still allowing a clean Ctrl+C shutdown
 
-The agent still improves dramatically with calibration templates, but v0.4 no longer requires templates just to avoid obviously wrong game modes.
+The existing gameplay policy remains in place underneath this supervision layer.
 
 ## Install / update
 
@@ -74,17 +74,23 @@ Boot PCSX2 with Madden visible and run:
 ps2-autopilot-doctor --config config\madden2005.yaml
 ```
 
-v0.4 checks Windows, the active PCSX2 render window, frame capture, the virtual gamepad backend, calibration templates, the Madden field detector, and RapidOCR semantic vision. The OCR check prints a preview of text read from the current game frame.
-
-If the game is sitting on `PRESS START`, a healthy OCR check should usually show some version of that phrase.
+The doctor checks Windows, the active PCSX2 render window, frame capture, the virtual gamepad backend, calibration templates, the Madden field detector, ONNX Runtime preload, and RapidOCR semantic vision.
 
 ## Run it
+
+Normal interactive run:
 
 ```bat
 ps2-autopilot --config config\madden2005.yaml
 ```
 
-Stop with `Ctrl+C`.
+For an unattended process wrapper:
+
+```bat
+run24x7.cmd
+```
+
+A clean `Ctrl+C` stops AutoPilot instead of immediately restarting it. The wrapper only restarts after an unexpected nonzero process exit.
 
 OBS Browser Source:
 
@@ -92,21 +98,23 @@ OBS Browser Source:
 http://127.0.0.1:8765/
 ```
 
-The HUD now exposes information like:
+The v0.5 HUD exposes information like:
 
 ```text
-SEMANTIC SCREEN  PLAYCALL 94%
-PHASE            PLAYCALL
-SITUATION        3&7 Q4 2:14
-ROLE             OFFENSE 82%
-PLAY PLAN        PASS
-ACTION           playcall: circle (pass)
-OCR              3RD & 7 | QTR 4 | 2:14 | ASK MADDEN ...
+SEMANTIC SCREEN     MAIN_MENU 96%
+HIGHLIGHT           GAME MODES 71%
+MENU TXN            cross -> team_select/controller_select/matchup
+PHASE               MENU
+ACTION              menu: move up toward PLAY NOW
+SEMANTIC STILL      2.4s / L0
+24/7 GAMES          2 complete / 3 started
+MENU VERIFIED/FAIL  14 / 1
+UNKNOWN CAPTURES    3
 ```
 
 ## Menu policy
 
-AutoPilot's navigation goal is deliberately narrow:
+AutoPilot's navigation goal remains deliberately narrow:
 
 ```text
 TITLE
@@ -119,7 +127,48 @@ TITLE
   -> FOOTBALL
 ```
 
-Known non-goal branches are backed out of rather than explored. This is important for unattended streaming: a conservative reset is better than spending an hour inside Franchise training camp.
+Known non-goal branches are backed out of rather than explored. For unattended streaming, a conservative reset is better than spending an hour inside Franchise training camp.
+
+### Verified transitions
+
+A confirm action is no longer assumed to work. The navigator records the source screen, action, and acceptable destinations, then observes until one is seen.
+
+```text
+MAIN_MENU
+  action: CROSS
+  expected: TEAM_SELECT / CONTROLLER_SELECT / MATCHUP
+```
+
+If the source screen remains visible, the action is retried. If a different unexpected mode appears, the transaction is rejected and the bot backs out.
+
+### Pause safety
+
+Pause menus are special-cased because navigating down them can reach settings or quit-game actions. Recovery therefore uses only:
+
+1. Start to toggle pause off.
+2. Cross as a fallback for the normally highlighted Resume Game option.
+
+It does not wander down the pause menu while trying to recover.
+
+## 24/7 runtime evidence
+
+Runtime artifacts live under the gitignored `runtime/` folder.
+
+```text
+runtime/
+  state.json
+  session.json
+  madden-events.jsonl
+  unknown/
+    20260822-183142-acde1234.png
+    20260822-183142-acde1234.json
+```
+
+Unknown captures are perceptually hashed and capped so an unattended stream does not fill the disk with duplicate screenshots.
+
+`session.json` persists coarse lifecycle information such as games started/completed, progress recoveries, hard recoveries, and the last known phase.
+
+`madden-events.jsonl` records transitions, actions, unknown captures, and requested recoveries. The log rotates when it reaches the configured size limit.
 
 ## Football policy
 
@@ -171,33 +220,33 @@ PCSX2
                          v
                  temporal football state
                          |
-              possession + down/distance
-                         |
             +------------+-------------+
             |                          |
-       menu navigator             field policy
-                                      |
-                        +-------------+-------------+
-                        |                           |
-                     offense                      defense
-                        +-------------+-------------+
-                                      |
-                                virtual Xbox pad
-                                      |
-                                    PCSX2
+    verified menu graph            field policy
+            |                          |
+            +------------+-------------+
+                         |
+                    virtual pad
+                         |
+                       PCSX2
 
-telemetry ---------------------------------------> OBS
+semantic state ---> progress watchdog ---> recovery ladder
+       |
+       +--> session/event logs
+       +--> unknown-state captures
+       +--> OBS telemetry
 ```
 
 ## Next targets
 
-1. live-calibrate OCR/vision against actual Madden game screens
-2. parse score and field position reliably
-3. recognize exact formation/play names and choose better calls
-4. detect receivers/defenders rather than using motion centroids alone
-5. add punt/field-goal/fourth-down logic
-6. add clock management, red-zone policy, and two-minute offense
-7. automate final screen -> next exhibition game for continuous streams
+1. validate v0.5 against several complete boot-to-game cycles
+2. automate final/post-game screens back into the next Play Now matchup
+3. add PCSX2 process launch/restart and cold-boot recovery
+4. parse score and field position reliably
+5. recognize exact formation/play names and choose better calls
+6. add punt/field-goal/fourth-down logic
+7. add clock management, red-zone policy, and two-minute offense
+8. run 2-hour, 8-hour, and 24-hour unattended soak tests
 
 ## Legal / repository hygiene
 

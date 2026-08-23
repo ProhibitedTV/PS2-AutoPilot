@@ -33,8 +33,22 @@ profile:
   aggression: 0.68
   steering_wander: 0.24
 
-  # v0.4 semantic vision. OCR runs slower than the 12 Hz reflex loop.
+  # Semantic vision. OCR runs slower than the 12 Hz reflex loop.
   ocr_enabled: true
   ocr_interval_seconds: 0.70
   ocr_min_width: 960
   ocr_min_confidence: 0.42
+
+  # v0.5 24/7 supervision. These timers watch semantic state changes rather
+  # than raw pixel motion, so an animated attract screen cannot look healthy
+  # forever while a static but valid playcall screen is handled deliberately.
+  unknown_capture_seconds: 3.0
+  unknown_capture_cooldown_seconds: 20.0
+  max_unknown_captures: 120
+  max_event_log_bytes: 5000000
+  menu_progress_timeout_seconds: 18.0
+  playcall_progress_timeout_seconds: 24.0
+  pre_snap_progress_timeout_seconds: 22.0
+  post_play_progress_timeout_seconds: 18.0
+  game_over_progress_timeout_seconds: 30.0
+  progress_recovery_cooldown_seconds: 8.0
