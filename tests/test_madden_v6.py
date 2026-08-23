@@ -4,6 +4,7 @@ from ps2_autopilot.madden_ocr import OCRLine, OCRSnapshot
 from ps2_autopilot.madden_vision import MaddenObservation, MaddenVisualState
 from ps2_autopilot.profiles.madden2005 import MaddenPhase, PlayIntent, Possession
 from ps2_autopilot.profiles.madden2005_v6 import Madden2005V6Profile
+from ps2_autopilot.profiles.madden2005_v6_runtime import Madden2005V6RuntimeProfile
 
 
 class FakeController:
@@ -124,17 +125,28 @@ def test_post_play_cross_is_bounded_to_two_skips():
 
 
 def test_interception_event_flips_known_possession_once():
-    profile = Madden2005V6Profile({"ocr_enabled": False})
+    profile = Madden2005V6RuntimeProfile({"ocr_enabled": False})
     profile.possession = Possession.OFFENSE
     profile.possession_confidence = 0.90
     profile.last_ocr = snapshot("INTERCEPTION")
 
     profile._note_game_event(now=10.0)
     assert profile.possession == Possession.DEFENSE
+    assert profile.possession_confidence >= 0.95
     assert profile.game_event_counts["interception"] == 1
 
     profile._note_game_event(now=11.0)
     assert profile.game_event_counts["interception"] == 1
+
+
+def test_high_confidence_playcall_can_replace_stale_role():
+    profile = Madden2005V6RuntimeProfile({"ocr_enabled": False})
+    profile.possession = Possession.OFFENSE
+    profile.possession_confidence = 0.98
+
+    profile._set_possession(Possession.DEFENSE, 0.96)
+    assert profile.possession == Possession.DEFENSE
+    assert profile.possession_confidence == 0.96
 
 
 def test_defense_waits_for_play_to_develop_before_tackle_buttons():
