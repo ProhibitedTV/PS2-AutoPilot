@@ -15,10 +15,10 @@ def compact_ocr(text: str | None) -> str:
 def semantic_context(telemetry: dict) -> str | None:
     """Return a known non-menu context for otherwise UNKNOWN screen telemetry.
 
-    `menu_screen=unknown` is expected during ordinary field gameplay because the
-    menu classifier is intentionally menu-centric. It must not be treated as an
-    unresolved navigation screen when stronger gameplay/presentation evidence is
-    available.
+    `menu_screen=unknown` is expected during ordinary field gameplay and Madden's
+    broadcast presentation because the menu classifier is intentionally menu-centric.
+    It must not be treated as unresolved navigation when stronger gameplay or
+    presentation evidence is available.
     """
 
     phase = str(telemetry.get("phase") or "").lower()
@@ -39,10 +39,45 @@ def semantic_context(telemetry: dict) -> str | None:
     if quarter_break:
         return "presentation"
 
+    # Live calibration produced normal Madden presentation screens such as
+    # Game Stats / Current Drive and the Instant Replay control overlay. These
+    # are broadcast content, not navigation failures. Avoid treating the pause
+    # menu's single INSTANT REPLAY option as an active replay by requiring
+    # stronger companion markers.
+    if any(marker in compact for marker in ("CURRENTDRIVE", "TIMEOFPOSSESSION", "HIDECONTROLS")):
+        return "presentation"
+    replay_hits = sum(
+        marker in compact
+        for marker in ("INSTANTREPLAY", "REWIND", "FORWARD", "BACKWARD", "HIDECONTROLS")
+    )
+    if replay_hits >= 2:
+        return "presentation"
+    stats_hits = sum(
+        marker in compact
+        for marker in ("GAMESTATS", "CURRENTDRIVE", "TIMEOFPOSSESSION")
+    )
+    if stats_hits >= 2:
+        return "presentation"
+
     try:
         field_green = float(telemetry.get("field_green") or 0.0)
     except (TypeError, ValueError):
         field_green = 0.0
+
+    # Formation/overhead field shots can arrive while the semantic phase is still
+    # MENU/TRANSITION. A real score bug plus visible turf is enough to suppress
+    # destructive menu backout while the phase catches up.
+    scorebug_hits = sum(marker in compact for marker in ("DOWN", "TOGO", "QTR", "CLOCK", "MPH"))
+    if field_green >= 0.18 and scorebug_hits >= 3:
+        return "field"
+
+    try:
+        spatial_players = int(telemetry.get("spatial_players") or 0)
+    except (TypeError, ValueError):
+        spatial_players = 0
+    spatial_fresh = bool(telemetry.get("spatial_fresh"))
+    if field_green >= 0.15 and spatial_fresh and spatial_players >= 4:
+        return "field"
 
     if game_state == "live_play" and field_green >= 0.30:
         return "field"
