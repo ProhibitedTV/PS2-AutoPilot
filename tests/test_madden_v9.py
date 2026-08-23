@@ -1,5 +1,8 @@
-from ps2_autopilot.madden_menu import GameSituation, parse_game_situation
+import numpy as np
+
+from ps2_autopilot.madden_menu import GameSituation, MaddenScreen, parse_game_situation
 from ps2_autopilot.madden_ocr import OCRLine, OCRSnapshot
+from ps2_autopilot.profiles.base import ProfileContext
 from ps2_autopilot.profiles.madden2005 import MaddenPhase, Possession
 from ps2_autopilot.profiles.madden2005_v9 import Madden2005V9Profile
 
@@ -55,6 +58,37 @@ def test_game_clock_seconds_are_not_mistaken_for_play_clock():
     situation = parse_game_situation(ocr("1:39", "2ND", "1ST AND 10"))
     assert situation.clock_seconds == 99
     assert situation.play_clock_seconds is None
+
+
+def test_live_offense_pick_a_play_banner_forces_playcall_and_role():
+    p = profile()
+    p.ocr.read = lambda frame, now: ocr(
+        "TO", "CLOCK", ":24", "3:10", "OFFENSEPICKAPLAY"
+    )
+    frame = np.zeros((360, 640, 3), dtype=np.uint8)
+    ctx = ProfileContext(frame=frame, previous_frame=None, motion=0.0, template=None, now=10.0)
+
+    p._observe(ctx)
+
+    assert p.phase == MaddenPhase.PLAYCALL
+    assert p.menu_assessment.screen == MaddenScreen.PLAYCALL
+    assert p.possession == Possession.OFFENSE
+    assert p.possession_confidence >= 0.96
+    assert p.current_playcall_role == Possession.OFFENSE
+
+
+def test_live_defense_pick_a_play_banner_forces_playcall_and_role():
+    p = profile()
+    p.ocr.read = lambda frame, now: ocr("DEFENSE PICK A PLAY")
+    frame = np.zeros((360, 640, 3), dtype=np.uint8)
+    ctx = ProfileContext(frame=frame, previous_frame=None, motion=0.0, template=None, now=10.0)
+
+    p._observe(ctx)
+
+    assert p.phase == MaddenPhase.PLAYCALL
+    assert p.menu_assessment.screen == MaddenScreen.PLAYCALL
+    assert p.possession == Possession.DEFENSE
+    assert p.current_playcall_role == Possession.DEFENSE
 
 
 def test_low_play_clock_forces_safe_cross_probe_even_with_defense_belief():
