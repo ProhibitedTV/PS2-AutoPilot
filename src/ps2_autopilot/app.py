@@ -11,6 +11,8 @@ from .observability import RuntimeObserver, TracingController
 from .overlay import OverlayServer
 from .profiles import GenericChaosProfile, Madden2005Profile
 from .profiles.base import ProfileContext
+from .runtime_version import package_version
+from .verbose_trace import VerboseRuntimeTrace
 from .vision import TemplateDetector, motion_score
 from .watchdog import MotionWatchdog
 from .window import PCSX2Window
@@ -55,7 +57,9 @@ class AutopilotApp:
         self.focus_window = bool(controller_cfg.get("focus_window", True))
 
         observability_cfg = dict(raw.get("observability", {}))
-        self.observer = RuntimeObserver(observability_cfg, project_root / "runtime")
+        runtime_root = project_root / "runtime"
+        self.observer = RuntimeObserver(observability_cfg, runtime_root)
+        self.verbose_trace = VerboseRuntimeTrace(observability_cfg, runtime_root)
         if self.observer.enabled:
             self.controller = TracingController(
                 base_controller,
@@ -94,7 +98,7 @@ class AutopilotApp:
                 host=str(overlay_cfg.get("host", "127.0.0.1")),
                 port=int(overlay_cfg.get("port", 8765)),
                 root=project_root / "overlay",
-                runtime=project_root / "runtime",
+                runtime=runtime_root,
             )
 
     def _load_savestate(self) -> None:
@@ -118,7 +122,17 @@ class AutopilotApp:
             self.overlay.write_state({"status": "starting"})
             self.overlay.start()
 
-        print(f"PS2 AutoPilot running profile={self.profile.name}. Ctrl+C to stop.")
+        print(
+            f"PS2 AutoPilot v{package_version()} running profile={self.profile.name}. "
+            "Ctrl+C to stop.",
+            flush=True,
+        )
+        if self.verbose_trace.enabled:
+            print(
+                "Verbose telemetry: runtime\\verbose.jsonl | runtime\\spatial.jsonl | "
+                "runtime\\events.jsonl | runtime\\input.jsonl",
+                flush=True,
+            )
         try:
             while True:
                 started = time.monotonic()
@@ -156,6 +170,7 @@ class AutopilotApp:
 
                 state = {
                     "status": "running",
+                    "version": package_version(),
                     "profile": self.profile.name,
                     "decision_id": decision_id,
                     "motion": round(motion, 4),
@@ -181,6 +196,7 @@ class AutopilotApp:
                     action=action,
                     now=started,
                 )
+                self.verbose_trace.record(decision_id, state, started)
                 last_state = state
                 last_action = action
 

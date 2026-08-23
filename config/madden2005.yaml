@@ -17,12 +17,17 @@ overlay:
   host: "127.0.0.1"
   port: 8765
 
-# v0.5.1 structured logs. Discrete button inputs are logged losslessly; analog
-# stick commands are sampled to keep multi-day traces reasonable.
+# Structured logging for long unattended runs. The decision/input logs remain
+# compact while v0.6 also records a full 1-second telemetry snapshot and a focused
+# spatial stream. This is intentionally verbose without becoming 12-Hz frame spam.
 observability:
   enabled: true
   console: true
+  verbose_console: true
   heartbeat_seconds: 5.0
+  verbose_log_seconds: 1.0
+  spatial_log_seconds: 0.75
+  spatial_console_seconds: 2.0
   history_size: 240
   input_history_size: 300
   max_log_bytes: 8000000
@@ -60,15 +65,27 @@ profile:
   presentation_stall_nudge_seconds: 30.0
   presentation_hard_recovery_seconds: 55.0
 
+  # v0.6 lightweight spatial perception. Detection runs below the 12-Hz reflex
+  # loop and only overrides steering when confidence clears the configured gates.
+  spatial_interval_seconds: 0.20
+  spatial_sample_width: 480
+  spatial_player_min_confidence: 0.30
+  spatial_max_players: 22
+  spatial_track_ttl_seconds: 0.90
+  spatial_ball_ttl_seconds: 0.70
+  spatial_target_confidence: 0.50
+  spatial_controlled_confidence: 0.48
+  spatial_open_confidence: 0.42
+  spatial_max_age_seconds: 0.70
+
   # Semantic vision. OCR runs slower than the 12 Hz reflex loop.
   ocr_enabled: true
   ocr_interval_seconds: 0.70
   ocr_min_width: 960
   ocr_min_confidence: 0.42
 
-  # v0.5 24/7 supervision. These timers watch semantic state changes rather
-  # than raw pixel motion, so an animated attract screen cannot look healthy
-  # forever while a static but valid playcall screen is handled deliberately.
+  # 24/7 semantic supervision. Presentation has a deliberately larger budget so
+  # normal Madden replays/cutscenes are preserved rather than treated as dead air.
   unknown_capture_seconds: 3.0
   unknown_capture_cooldown_seconds: 20.0
   max_unknown_captures: 120

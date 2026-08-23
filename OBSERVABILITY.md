@@ -1,6 +1,6 @@
 # PS2 AutoPilot observability
 
-v0.5.1 adds a structured decision trace designed for unattended Madden runs. The goal is to reconstruct what AutoPilot believed, which controller command it issued, what it expected to happen, and what happened next without logging every 12 Hz video frame.
+PS2 AutoPilot uses two complementary logging layers for unattended Madden runs: a concise event/input black box and a denser, bounded v0.6 telemetry trace. The goal is to reconstruct what AutoPilot believed, which controller command it issued, what spatial evidence it had, and what happened next without writing one JSON document for every 12 Hz video frame.
 
 ## Runtime files
 
@@ -11,6 +11,8 @@ runtime/
   events.jsonl
   heartbeat.jsonl
   input.jsonl
+  verbose.jsonl
+  spatial.jsonl
   errors.log
   session.json
   madden-events.jsonl
@@ -55,6 +57,24 @@ A compact state snapshot every five seconds by default. This is useful for long-
 
 Every discrete button/trigger command is logged with the current `decision_id`. Analog stick commands are sampled by time/delta because recording 12 near-identical stick positions every second would create millions of low-value rows during a multi-day stream.
 
+### `verbose.jsonl`
+
+v0.6 writes the complete runtime telemetry state once per second by default. This includes semantic state, OCR, gameplay policy, recovery counters, presentation state, and the latest spatial evidence. It is the first file to inspect when a live failure needs more context than `events.jsonl` contains.
+
+### `spatial.jsonl`
+
+A focused localization trace written every 0.75 seconds by default while spatial vision is active. Rows include:
+
+- stabilized player-candidate coordinates/confidence
+- likely controlled-player marker evidence when available
+- ball hypothesis coordinates/confidence
+- action-target coordinates/confidence
+- open-space steering estimate/confidence
+- active spatial policy mode/reason
+- spatial processing time
+
+Spatial output is always confidence-gated. Low-confidence vision is evidence for debugging, not permission to send risky controller inputs.
+
 ### `errors.log`
 
 Unhandled Python exceptions and tracebacks. `run24x7.cmd` can then restart the process while preserving the postmortem evidence.
@@ -67,30 +87,43 @@ Failure bundles are capped by `max_failure_bundles` so they cannot grow forever.
 
 ## Live console trace
 
-The normal AutoPilot console now prints only meaningful state/action changes rather than every loop tick.
+The normal observer prints meaningful semantic/action changes. v0.6 additionally prints a spatial health line every two seconds during field phases when verbose console output is enabled.
 
 ```text
-[18:52:04] PLAYCALL   PLAYCALL 0.94 | playcall: cross (defense)
-[18:52:06] PRE_SNAP   UNKNOWN 0.31  | defense: cycle defender / wait snap
-[18:52:11] LIVE       UNKNOWN 0.29  | defense: switch nearest ball
-[18:52:18] POST_PLAY  UNKNOWN 0.28  | post-play: skip cutscene
+[19:42:04] PLAYCALL   PLAYCALL 0.94 | playcall: cross (defense)
+[19:42:11] LIVE       UNKNOWN 0.29  | defense: switch nearest ball
+[19:42:12] SPATIAL LIVE      role=DEFENSE:0.96 players=14 ball=0.61 target=(+0.18,-0.22)/0.67 open=-0.36/0.55 mode=defense-target cpu=4.8ms
 ```
 
-## Tail the trace
+This makes it possible to watch the bot's perception quality while the stream is live without opening the JSON files.
 
-After installing v0.5.1 entry points:
+## Tail the traces
+
+Meaningful decisions:
 
 ```bat
 ps2-autopilot-log --last 60 --follow
 ```
 
-Controller audit instead:
+Controller audit:
 
 ```bat
 ps2-autopilot-log --inputs --last 80 --follow
 ```
 
-The two logs share `decision_id`, so a suspicious controller command can be matched back to the decision/state that produced it.
+Dense one-second telemetry:
+
+```bat
+ps2-autopilot-log --verbose --last 60 --follow
+```
+
+Spatial localization only:
+
+```bat
+ps2-autopilot-log --spatial --last 80 --follow
+```
+
+All streams share `decision_id`, so a suspicious controller command can be matched back to the semantic decision and the spatial evidence that existed at that moment.
 
 ## Session report
 
@@ -98,7 +131,7 @@ The two logs share `decision_id`, so a suspicious controller command can be matc
 ps2-autopilot-report
 ```
 
-The report summarizes observed uptime, games started/completed, semantic and hard recoveries, unknown captures, failure-bundle count, controller-command counts, common decisions, common semantic transitions, and recent failures.
+The report summarizes observed uptime, games started/completed, semantic and hard recoveries, unknown captures, failure-bundle count, controller-command counts, common decisions/transitions, and spatial diagnostics including average player candidates, ball/target lock rate, policy overrides, and average spatial processing cost.
 
 ## Configuration
 
@@ -108,7 +141,11 @@ The report summarizes observed uptime, games started/completed, semantic and har
 observability:
   enabled: true
   console: true
+  verbose_console: true
   heartbeat_seconds: 5.0
+  verbose_log_seconds: 1.0
+  spatial_log_seconds: 0.75
+  spatial_console_seconds: 2.0
   history_size: 240
   input_history_size: 300
   max_log_bytes: 8000000
@@ -118,7 +155,7 @@ observability:
   stick_log_delta: 0.08
 ```
 
-`events.jsonl`, `heartbeat.jsonl`, and `input.jsonl` rotate to a `.1` file at the configured size. Unknown screenshots and failure bundles have independent retention caps.
+JSONL logs rotate to a `.1` file at the configured size. Unknown screenshots and failure bundles have independent retention caps.
 
 ## Why not log every frame?
 
@@ -127,7 +164,9 @@ At 12 Hz, a single day contains more than one million loop iterations. Full fram
 - every meaningful semantic/action change
 - every discrete controller command
 - sampled analog commands
-- a periodic heartbeat
+- a compact periodic heartbeat
+- a full telemetry snapshot every second
+- a focused spatial snapshot about once per second
 - full frame evidence only around failures
 
-That keeps a long-running stream diagnosable without turning logging into the workload.
+That is intentionally verbose enough for live development while remaining realistic for multi-day unattended operation.
