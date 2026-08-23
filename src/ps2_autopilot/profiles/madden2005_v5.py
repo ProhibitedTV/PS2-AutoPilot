@@ -8,6 +8,7 @@ from ps2_autopilot.madden_menu import (
     MenuAssessment,
     MenuHighlight,
     detect_menu_highlight,
+    find_ocr_line,
 )
 from ps2_autopilot.madden_runtime import MaddenRuntimeMonitor, RuntimeDirective
 from ps2_autopilot.madden_vision import MaddenObservation, MaddenVisualState
@@ -30,6 +31,7 @@ class Madden2005V5Profile(Madden2005V4Profile):
         self.last_progress_directive: RuntimeDirective | None = None
         self.pause_start_attempts = 0
         self.pause_resume_attempts = 0
+        self.pause_seek_steps = 0
 
     @staticmethod
     def looks_like_pause_text(text: str) -> bool:
@@ -46,32 +48,54 @@ class Madden2005V5Profile(Madden2005V4Profile):
             "COACHING OPTIONS",
             "SETTINGS",
             "QUIT GAME",
+            "QUIT/SAVE",
             "QUIT",
         )
         hits = sum(1 for marker in markers if marker in alpha)
-        # Requiring two independent menu items avoids interpreting an ordinary
-        # gameplay/settings label as the pause overlay.
         return hits >= 2
 
+    @staticmethod
+    def _normalized_menu_text(text: str) -> str:
+        return text.upper().replace("0", "O").replace("1", "I").replace("5", "S")
+
+    def _reset_pause_recovery(self) -> None:
+        self.pause_start_attempts = 0
+        self.pause_resume_attempts = 0
+        self.pause_seek_steps = 0
+
     def _observe(self, ctx: ProfileContext) -> MaddenObservation:
-        old_phase = self.phase
+        was_paused = self.phase == MaddenPhase.PAUSED
+        pause_since = self.phase_since
         obs = super()._observe(ctx)
 
-        # Live testing found a pause menu that could survive because OCR did not
-        # always read the small PAUSE header. The option list itself is far more
-        # stable, so v0.5 treats that combination as authoritative.
-        if self.looks_like_pause_text(self.last_ocr.text):
-            self.menu_assessment = MenuAssessment(MaddenScreen.PAUSED, 0.96, "pause option cluster")
-            if self.phase != MaddenPhase.PAUSED:
+        # The parent semantic pass may briefly classify a paused field as another
+        # field phase before v0.5 applies its more tolerant pause option-cluster
+        # rule. Preserve the original pause timestamp so the pause watchdog and
+        # recovery ladder do not restart their clocks on every OCR cycle.
+        pause_visible = self.looks_like_pause_text(self.last_ocr.text)
+        if pause_visible:
+            self.menu_assessment = MenuAssessment(
+                MaddenScreen.PAUSED, 0.96, "pause option cluster"
+            )
+            if was_paused:
+                self.phase = MaddenPhase.PAUSED
+                self.phase_since = pause_since
+            elif self.phase != MaddenPhase.PAUSED:
                 self._transition_phase(MaddenPhase.PAUSED, ctx.now)
+                self._reset_pause_recovery()
 
-        if self.phase in {MaddenPhase.MENU, MaddenPhase.TRANSITION, MaddenPhase.GAME_OVER, MaddenPhase.PAUSED}:
+        if self.phase in {
+            MaddenPhase.MENU,
+            MaddenPhase.TRANSITION,
+            MaddenPhase.GAME_OVER,
+            MaddenPhase.PAUSED,
+        }:
             self.menu_highlight = detect_menu_highlight(ctx.frame, self.last_ocr)
         else:
             self.menu_highlight = None
-        if old_phase == MaddenPhase.PAUSED and self.phase != MaddenPhase.PAUSED:
-            self.pause_start_attempts = 0
-            self.pause_resume_attempts = 0
+
+        if was_paused and not pause_visible and self.phase != MaddenPhase.PAUSED:
+            self._reset_pause_recovery()
         return obs
 
     def _menu(self, controller: Controller, obs: MaddenObservation, now: float) -> str:
@@ -85,30 +109,65 @@ class Madden2005V5Profile(Madden2005V4Profile):
         )
 
     def _paused(self, controller: Controller, now: float) -> str:
-        """Get out of Madden's pause menu without wandering through its options.
+        """Safely leave Madden's pause menu.
 
-        Start is the safest first choice because it toggles pause. If the game is
-        still semantically paused after several attempts, Cross is used as a
-        fallback for the normally highlighted Resume Game row. We never navigate
-        down toward settings/quit while trying to recover.
+        First try Start because it cannot select a destructive row. If Start does
+        not work, visually navigate to RESUME GAME. Cross is emitted only when the
+        highlighted OCR row itself is confidently RESUME; it is never sent blindly
+        because live testing showed Madden can pause with QUIT/SAVE highlighted.
         """
 
         controller.neutral_sticks()
         if now < self.next_action_at:
             return self.current_action
 
-        paused_for = max(0.0, now - self.phase_since)
-        if self.pause_start_attempts < 3 or paused_for < 5.0:
+        if self.pause_start_attempts < 3:
             controller.tap("start", 0.08)
             self.pause_start_attempts += 1
             self.next_action_at = now + 1.55
-            self.current_action = f"pause: START resume attempt {self.pause_start_attempts}"
+            self.current_action = f"pause: START resume attempt {self.pause_start_attempts}/3"
             return self.current_action
 
-        controller.tap("cross", 0.08)
-        self.pause_resume_attempts += 1
+        highlight = self.menu_highlight
+        resume_line = find_ocr_line(self.last_ocr, "RESUME GAME", "RESUME")
+        if highlight is not None and highlight.confidence >= 0.24:
+            highlighted = self._normalized_menu_text(highlight.text)
+            if "RESUME" in highlighted:
+                controller.tap("cross", 0.08)
+                self.pause_resume_attempts += 1
+                self.next_action_at = now + 1.55
+                self.current_action = (
+                    f"pause: verified RESUME GAME -> CROSS {self.pause_resume_attempts}"
+                )
+                return self.current_action
+
+            if resume_line is not None:
+                direction = "down" if resume_line.y > highlight.y else "up"
+                controller.tap(direction, 0.07)
+                self.pause_seek_steps += 1
+                self.next_action_at = now + 0.48
+                self.current_action = (
+                    f"pause: move {direction} toward RESUME GAME "
+                    f"({highlight.text} -> RESUME)"
+                )
+                return self.current_action
+
+        # When highlight detection is weak, RESUME GAME is the top pause-menu row.
+        # A bounded UP seek is safe; unlike Cross it cannot activate QUIT/SAVE.
+        if self.pause_seek_steps < 10:
+            controller.tap("up", 0.07)
+            self.pause_seek_steps += 1
+            self.next_action_at = now + 0.48
+            self.current_action = f"pause: safe UP seek for RESUME {self.pause_seek_steps}/10"
+            return self.current_action
+
+        # Still refuse to confirm an unverified row. Retry Start and then resume
+        # seeking rather than risking save/quit/settings in unattended operation.
+        controller.tap("start", 0.08)
+        self.pause_start_attempts += 1
+        self.pause_seek_steps = 0
         self.next_action_at = now + 1.55
-        self.current_action = f"pause: CROSS Resume Game fallback {self.pause_resume_attempts}"
+        self.current_action = "pause: resume unverified; retry START and rescan"
         return self.current_action
 
     def _policy_tick(self, controller: Controller, ctx: ProfileContext) -> str:
@@ -151,8 +210,6 @@ class Madden2005V5Profile(Madden2005V4Profile):
     ) -> str:
         level = directive.level
         if self.phase == MaddenPhase.PAUSED:
-            # Never let the generic menu unwinder scroll around a pause menu.
-            # Retry only the two known-safe resume mechanisms.
             return self._paused(controller, now)
         if self.phase in {MaddenPhase.MENU, MaddenPhase.TRANSITION, MaddenPhase.GAME_OVER}:
             return self.menu.request_recovery(controller, level, now)
@@ -206,6 +263,7 @@ class Madden2005V5Profile(Madden2005V4Profile):
         state["runtime_hours"] = round(max(0.0, ctx.now - self.started_at) / 3600.0, 2)
         state["pause_start_attempts"] = self.pause_start_attempts
         state["pause_resume_attempts"] = self.pause_resume_attempts
+        state["pause_seek_steps"] = self.pause_seek_steps
         if self.last_progress_directive is not None:
             state["progress_recovery_reason"] = self.last_progress_directive.reason
             state["progress_recovery_stalled"] = round(
