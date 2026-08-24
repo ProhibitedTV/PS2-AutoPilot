@@ -8,6 +8,7 @@ import time
 from .ort_preload import PRELOAD as ORT_PRELOAD
 from .capture import FrameGrabber
 from .config import load_config
+from .config_preflight import validate_static_config
 from .madden_ocr import MaddenOCR
 from .madden_vision import MaddenVision
 from .profiles.registry import get_profile_spec
@@ -15,10 +16,15 @@ from .vision import TemplateDetector
 from .window import PCSX2Window
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Validate PS2 AutoPilot runtime prerequisites")
     parser.add_argument("--config", default="config/madden2005.yaml")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--config-only",
+        action="store_true",
+        help="validate static profile/controller/supervisor config without requiring Windows or PCSX2",
+    )
+    args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
     raw = cfg.raw
@@ -30,6 +36,18 @@ def main() -> None:
             failures += 1
         suffix = f" — {detail}" if detail else ""
         print(f"[{'OK' if ok else 'FAIL'}] {label}{suffix}")
+
+    root = Path(__file__).resolve().parents[2]
+    for finding in validate_static_config(cfg, root):
+        report(finding.ok, finding.label, finding.detail)
+
+    if failures:
+        print(f"\nDoctor found {failures} blocking static configuration issue(s).")
+        raise SystemExit(1)
+
+    if args.config_only:
+        print("\nPS2 AutoPilot static configuration looks ready.")
+        return
 
     is_windows = platform.system() == "Windows"
     report(is_windows, "Windows runtime", platform.system())
@@ -60,18 +78,13 @@ def main() -> None:
         except Exception as exc:
             report(False, "vgamepad / ViGEm backend", str(exc))
     else:
-        report(True, "controller backend", backend)
+        report(True, "controller runtime dependency", backend)
 
     profile_cfg = dict(raw.get("profile", {}))
     profile_name = str(profile_cfg.get("name", "generic_chaos"))
-    try:
-        spec = get_profile_spec(profile_name)
-        report(True, "registered game profile", f"{spec.display_name} ({spec.maturity})")
-    except ValueError as exc:
-        report(False, "registered game profile", str(exc))
-        raise SystemExit(1) from exc
+    # Static preflight already proved this lookup succeeds.
+    spec = get_profile_spec(profile_name)
 
-    root = Path(__file__).resolve().parents[2]
     template_dir = root / "profiles" / spec.template_namespace / "templates"
     detector = TemplateDetector(template_dir)
     report(True, "calibration templates", f"{len(detector.templates)} loaded from {spec.template_namespace}")
