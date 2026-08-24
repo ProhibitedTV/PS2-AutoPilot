@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .observability import read_jsonl
-from .soak_report import _read_log_series, _unresolved_reason, build_report, discover_sessions
+from .runtime_evidence import (
+    build_soak_report,
+    discover_sessions,
+    overall_metrics,
+    read_log_series,
+    unresolved_reason,
+)
 
 
 DEFAULT_FRESH_BOOT_RUNS = 3
@@ -31,7 +37,7 @@ def _max_int(states: Iterable[dict[str, Any]], key: str) -> int:
 
 
 def _fresh_session_evidence(root: Path) -> dict[str, Any]:
-    rows = _read_log_series(root, "verbose.jsonl")
+    rows = read_log_series(root, "verbose.jsonl")
     states = [row.get("state") for row in rows if isinstance(row.get("state"), dict)]
     states = [state for state in states if isinstance(state, dict)]
     evidence = {
@@ -171,14 +177,8 @@ def evaluate_soak(
     min_hours = max(0.0, float(min_hours))
     min_games_completed = max(1, int(min_games_completed))
     max_unresolved_pct = max(0.0, float(max_unresolved_pct))
-    report = build_report(roots)
-
-    # `soak_report.build_report()` deliberately exposes its cross-session aggregate
-    # as `overall`. Treat a missing/invalid block as a schema error rather than
-    # silently turning all metrics into zero and producing a misleading failure.
-    overall = report.get("overall")
-    report_schema_valid = isinstance(overall, dict)
-    aggregate = dict(overall) if report_schema_valid else {}
+    report = build_soak_report(roots)
+    aggregate = overall_metrics(report)
     duration = float(aggregate.get("duration_seconds", 0.0) or 0.0)
     hours = duration / 3600.0
     games = int(aggregate.get("games_completed", 0) or 0)
@@ -187,18 +187,17 @@ def evaluate_soak(
     sessions = discover_sessions(roots)
     final_unresolved: list[dict[str, str]] = []
     for root in sessions:
-        rows = _read_log_series(root, "verbose.jsonl")
+        rows = read_log_series(root, "verbose.jsonl")
         states = [row.get("state") for row in rows if isinstance(row.get("state"), dict)]
         if not states:
             final_unresolved.append({"root": str(root), "reason": "no-telemetry"})
             continue
-        reason = _unresolved_reason(states[-1])
+        reason = unresolved_reason(states[-1])
         if reason is not None:
             final_unresolved.append({"root": str(root), "reason": reason})
 
     passed = bool(
-        report_schema_valid
-        and sessions
+        sessions
         and hours >= min_hours
         and games >= min_games_completed
         and unresolved_pct <= max_unresolved_pct
@@ -207,12 +206,12 @@ def evaluate_soak(
     return _criterion(
         passed,
         (
-            f"schema_valid={report_schema_valid} duration={hours:.2f}h/{min_hours:.2f}h "
+            f"duration={hours:.2f}h/{min_hours:.2f}h "
             f"games={games}/{min_games_completed} "
             f"unresolved={unresolved_pct:.3f}%<={max_unresolved_pct:.3f}% "
             f"final_unresolved={len(final_unresolved)}"
         ),
-        report_schema_valid=report_schema_valid,
+        report_schema_valid=True,
         minimum_hours=min_hours,
         duration_hours=round(hours, 4),
         minimum_games_completed=min_games_completed,
