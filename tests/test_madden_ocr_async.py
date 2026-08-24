@@ -70,6 +70,53 @@ def test_worker_keeps_only_latest_pending_frame_and_reports_backpressure():
         ocr.close()
 
 
+def test_async_ownership_downscales_1080p_before_queue_copy():
+    ocr = MaddenOCR(
+        enabled=False,
+        min_width=960,
+        max_width=1280,
+        async_enabled=True,
+        bootstrap_sync=False,
+    )
+    source = np.full((1080, 1920, 3), 37, dtype=np.uint8)
+
+    owned = ocr._own_submit_frame(source)
+
+    assert owned.shape == (720, 1280, 3)
+    assert owned.nbytes == 1280 * 720 * 3
+    assert source.nbytes == 1920 * 1080 * 3
+    assert owned.nbytes / source.nbytes < 0.45
+    assert ocr.submit_downscales == 1
+    metrics = ocr.telemetry(1.0)
+    assert metrics["ocr_submit_source_width"] == 1920
+    assert metrics["ocr_submit_owned_width"] == 1280
+    assert 55.0 <= metrics["ocr_submit_copy_reduction_pct"] <= 56.0
+
+    # Resize must also establish ownership: later capture-buffer mutation cannot alter
+    # the queued worker snapshot.
+    source.fill(99)
+    assert int(owned[0, 0, 0]) == 37
+
+
+def test_native_size_async_ownership_still_copies_capture_buffer():
+    ocr = MaddenOCR(
+        enabled=False,
+        min_width=480,
+        max_width=1280,
+        async_enabled=True,
+        bootstrap_sync=False,
+    )
+    source = np.full((480, 640, 3), 12, dtype=np.uint8)
+
+    owned = ocr._own_submit_frame(source)
+    source.fill(77)
+
+    assert owned.shape == source.shape
+    assert int(owned[0, 0, 0]) == 12
+    assert ocr.submit_downscales == 0
+    assert ocr.telemetry(1.0)["ocr_submit_copy_reduction_pct"] == 0.0
+
+
 def test_sync_mode_remains_available_for_debugging():
     ocr = FakeOCR(interval_seconds=0.20, async_enabled=False, bootstrap_sync=True, delay=0.01)
     try:
