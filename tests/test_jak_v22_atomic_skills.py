@@ -3,7 +3,7 @@ import numpy as np
 from ps2_autopilot.controllers.base import Controller
 from ps2_autopilot.profiles import JakAndDaxterProfile
 from ps2_autopilot.profiles.base import ProfileContext
-from ps2_autopilot.profiles.jak_and_daxter_v22 import JakAndDaxterV22Profile
+from ps2_autopilot.profiles.jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from ps2_autopilot.profiles.registry import build_profile
 
 
@@ -47,14 +47,14 @@ def profile(**overrides) -> JakAndDaxterV22Profile:
     return JakAndDaxterV22Profile(cfg)
 
 
-def ctx(now: float, motion: float = 0.02) -> ProfileContext:
+def ctx(now: float, motion: float = 0.02, semantic=None) -> ProfileContext:
     return ProfileContext(
         frame=np.zeros((120, 160, 3), dtype=np.uint8),
         previous_frame=np.zeros((120, 160, 3), dtype=np.uint8),
         motion=motion,
         template=None,
         now=now,
-        semantic={},
+        semantic=dict(semantic or {}),
         performance={},
     )
 
@@ -143,3 +143,50 @@ def test_atomic_skill_can_be_safety_aborted_without_counting_success():
     assert telemetry["jak_skill_roll_jump_safety_aborts"] == 1
     assert telemetry["jak_skill_roll_jump_successes"] == 0
     assert telemetry["jak_skill_preemptions_v22"] == 1
+
+
+def test_active_atomic_skill_defers_progress_hud_probe():
+    p = profile()
+    pad = RecordingController()
+    p._start_roll_jump(ctx(8.0), heading=0.0)
+    p.next_progress_probe_at = 8.0
+
+    assert p._maybe_progress_probe(pad, ctx(8.1)) is False
+    assert p.progress_probe_active is False
+    assert p.next_progress_probe_at is not None
+    assert p.next_progress_probe_at > 8.1
+    assert p.atomic_skills.is_active
+
+
+def test_explicit_airborne_contact_blocks_motion_only_success():
+    p = profile(v22_skill_verify_motion=0.005)
+    p._start_roll_jump(ctx(10.0, motion=0.0), heading=0.0)
+    skill = p.atomic_skills.active
+    assert skill is not None
+
+    airborne = ctx(
+        10.5,
+        motion=0.05,
+        semantic={
+            "pine_available": True,
+            "pine_verified": True,
+            "pine_stale": False,
+            "jak_grounded": False,
+        },
+    )
+    assert p._verify_atomic_skill(skill, airborne) is False
+    assert p.v22_motion_verifications == 0
+
+
+def test_initial_mobility_align_uses_live_controller_same_tick():
+    p = profile(v22_skill_align_seconds=0.10)
+    pad = RecordingController()
+    pad.left = (0.9, -0.9)
+
+    p._start_mobility_probe(pad, ctx(12.0, motion=0.0))
+
+    assert p.atomic_skills.is_active
+    assert p.atomic_skills.active is not None
+    assert p.atomic_skills.active.phase == "align"
+    assert pad.left != (0.9, -0.9)
+    assert pad.left[1] > 0.0
