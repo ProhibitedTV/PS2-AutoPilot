@@ -1,13 +1,13 @@
 # Game Profiles
 
-PS2 AutoPilot is a multi-game PCSX2 runtime. Game-specific behavior lives behind a registered profile; capture, controller, supervision, retention, logging, optional semantic telemetry, and overlay plumbing stay shared.
+PS2 AutoPilot is a multi-game PCSX2 runtime. Game-specific behavior lives behind a registered profile; capture, controller, supervision, retention, logging, optional semantic telemetry, acceptance tooling, and overlay plumbing stay shared.
 
 ## Registered games
 
 | Profile | Game | Current policy | Maturity | Config |
 | --- | --- | --- | --- | --- |
-| `madden2005` | Madden NFL 2005 | `Madden2005V23Profile` | soak-tested | `config/madden2005.yaml` |
-| `jak_and_daxter` | Jak and Daxter: The Precursor Legacy | `JakAndDaxterV21Profile` | production-candidate | `config/jak_and_daxter.yaml` |
+| `madden2005` | Madden NFL 2005 | `Madden2005V24Profile` | production-candidate | `config/madden2005.yaml` |
+| `jak_and_daxter` | Jak and Daxter: The Precursor Legacy | `JakAndDaxterV22Profile` | production-candidate | `config/jak_and_daxter.yaml` |
 | `generic_chaos` | Generic smoke test | generic | diagnostic | custom |
 
 List the registry at any time:
@@ -16,7 +16,7 @@ List the registry at any time:
 ps2-autopilot --list-profiles
 ```
 
-The Madden and Jak implementations remain independently versioned. `madden2005` resolves to V23 and `jak_and_daxter` resolves to V21; neither policy imports the other game's state machine.
+The Madden and Jak implementations are independently versioned. `madden2005` resolves to V24 and `jak_and_daxter` resolves to V22; neither policy imports the other game's state machine.
 
 ## Run one game
 
@@ -38,19 +38,48 @@ Equivalent explicit command:
 run24x7.cmd config\jak_and_daxter.yaml
 ```
 
-The runner clears the previous runtime session once when manually launched, then preserves current-session crash evidence across supervised AutoPilot restarts. It does not yet relaunch PCSX2 itself after emulator process death.
+`run24x7.cmd` launches the Python supervisor. AutoPilot process crashes are restarted conservatively. When an explicit local PCSX2/game argv list is configured, the supervisor can also detect render-window/process loss and relaunch PCSX2. Terminating an existing emulator after repeated failures requires a separate opt-in; machine-specific executable and game-image paths are intentionally not committed.
+
+See `SUPERVISOR.md` and `RECOVERY_LADDER.md` for the ownership and safety boundaries.
+
+## Maturity means active-version evidence
+
+Maturity describes the policy currently selected by the registry, not the best evidence ever achieved by an older policy version. A successor that changes behavior must re-earn live acceptance rather than automatically inheriting its predecessor's badge.
+
+- `diagnostic`: smoke-test tooling, not a production game policy.
+- `production-candidate`: implementation and regression coverage are strong enough for targeted live acceptance, but the active policy still has unresolved live gates.
+- `soak-tested`: the active policy itself has completed the repository's defined unattended soak/acceptance evidence.
+
+This distinction is why Madden V24 is currently `production-candidate`: V23 completed a seven-game unattended lifecycle soak, while V24 changes special-teams ownership and possession semantics and has not yet repeated the final live acceptance suite.
 
 ## Validation boundaries
 
 ### Madden NFL 2005
 
-Madden is the soak-tested profile. Live evidence has gone beyond a single successful game: an unattended soak completed seven games before exposing an EA SPORTS Bio missing-profile modal. The later V22 handler owns that distinct modal and only confirms when CANCEL is visually verified. V23 additionally prevents low-confidence defensive spatial reads from producing random tackle/strip/play-ball/rush actions; uncertain defense pursues and sprints until contact is justified.
+The Madden lifecycle has strong real-run evidence. V23 and its predecessors autonomously reached games, completed postgame navigation, returned to `PLAY NOW`, rotated teams/sides, and completed a seven-game unattended soak before an EA SPORTS Bio modal exposed a new blocker. That blocker was subsequently promoted into a dedicated write-safe recovery path.
 
-That evidence demonstrates a functioning multi-game lifecycle, but it is not the same as final overnight/cold-restart acceptance. PCSX2 process relaunch and the broad overnight lifecycle gate remain separate open work.
+V24 keeps the proven lifecycle and changes the special-teams state model:
+
+- strict kickoff, kick-return, punt, punt-return, field-goal and extra-point intent
+- separate kicking-side and returning-side controller ownership
+- no kick-meter inputs while the CPU owns a return kick
+- kick/punt returns hand live possession to offense with a bounded run-only return policy
+- kickoff/punt coverage hands live possession to defense
+- ambiguous scoring-kick live transitions drop invented possession confidence instead of guessing
+
+Those semantics are regression-tested but not yet live-calibrated across the required footage, so the active profile remains a production candidate.
+
+Issue #3 has three remaining live lifecycle gates: repeated fresh-boot selection, a real PCSX2 process-death recovery during the exhibition loop, and a clean overnight soak after the latest fixes. The closure tool is:
+
+```bat
+ps2-autopilot-madden-acceptance --help
+```
+
+It consumes retained evidence through the shared runtime-evidence contract and does not infer operator assertions such as a fresh boot or deliberate process-death test from file presence alone.
 
 ### Jak and Daxter
 
-Jak V21 has crossed the old save-file calibration boundary. Real PCSX2 sessions have exercised:
+Jak V22 has crossed the old save-file calibration boundary. Real PCSX2 sessions have exercised:
 
 ```text
 PRESS START
@@ -61,9 +90,19 @@ PRESS START
  -> Geyser Rock gameplay
 ```
 
-The current profile includes continuous analog navigation, water/shoreline recovery, target/route validation, atomic relocation, optional read-only PINE semantics, and persistent online consequence memory. The PINE bridge can resolve the Jak 1 GOAL runtime schema on the validated retail build, but position/progression values are still subject to end-to-end live validation before every navigation layer may trust them. V21 therefore refuses XYZ learning until coordinates demonstrate plausible movement.
+The current profile includes continuous analog navigation, water/shoreline recovery, ledge/platform skills, target/route validation, atomic relocation, optional read-only PINE semantics, persistent route-consequence memory, and hardened water-danger learning. The PINE bridge self-resolves the supported Jak 1 GOAL runtime schema instead of relying on invented absolute RAM addresses.
 
-Jak remains a production-candidate because it has **not** yet autonomously graduated Geyser Rock or completed the planned long soaks.
+Semantic validation and contact probing remain fail-closed. Geyser Rock graduation requires retained evidence rather than planner inference, and the active V22 policy remains a production candidate until its live semantic/graduation gates pass.
+
+Useful validation commands include:
+
+```bat
+ps2-autopilot-jak-semantic-check --help
+ps2-autopilot-jak-contact --help
+ps2-autopilot-jak-curriculum --help
+ps2-autopilot-jak-acceptance --help
+ps2-autopilot-jak-validation --help
+```
 
 ## Why Jak is a separate policy
 
