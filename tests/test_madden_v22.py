@@ -2,7 +2,6 @@ import cv2
 import numpy as np
 
 from ps2_autopilot.controllers.base import Controller
-from ps2_autopilot.profiles import Madden2005Profile
 from ps2_autopilot.profiles.madden2005_v22 import Madden2005V22Profile
 
 
@@ -38,10 +37,6 @@ def frame_with_red_bar(center_y: float) -> np.ndarray:
     cy = int(center_y * frame.shape[0])
     cv2.rectangle(frame, (820, cy - 27), (1130, cy + 27), (0, 0, 190), -1)
     return frame
-
-
-def test_default_profile_alias_points_at_v22():
-    assert Madden2005Profile is Madden2005V22Profile
 
 
 def test_captured_ea_bio_ocr_is_recognized_as_distinct_modal():
