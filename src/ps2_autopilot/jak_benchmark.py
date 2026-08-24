@@ -2,9 +2,45 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from datetime import datetime
 import json
 from pathlib import Path
 from typing import Any, Iterable
+
+
+def _utc_timestamp(value: Any) -> float | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(text).timestamp()
+    except ValueError:
+        return None
+
+
+def _normalize_record(value: dict[str, Any]) -> dict[str, Any]:
+    """Return the telemetry payload from either supported JSONL shape.
+
+    `VerboseRuntimeTrace` writes an envelope containing `state`, while older fixtures
+    and one-off reports may already be flat telemetry dictionaries. Jak reporting
+    tools consume both formats so production logs cannot silently summarize as zeros.
+    """
+
+    nested = value.get("state")
+    if not isinstance(nested, dict):
+        return value
+
+    row = dict(nested)
+    for key in ("decision_id", "kind", "utc"):
+        if key not in row and key in value:
+            row[key] = value[key]
+    if not isinstance(row.get("timestamp"), (int, float)):
+        timestamp = _utc_timestamp(value.get("utc"))
+        if timestamp is not None:
+            row["timestamp"] = timestamp
+    return row
 
 
 def _records(path: Path) -> Iterable[dict[str, Any]]:
@@ -18,7 +54,7 @@ def _records(path: Path) -> Iterable[dict[str, Any]]:
             except json.JSONDecodeError:
                 continue
             if isinstance(value, dict):
-                yield value
+                yield _normalize_record(value)
 
 
 def summarize(path: Path) -> dict[str, Any]:
@@ -84,8 +120,14 @@ def summarize(path: Path) -> dict[str, Any]:
         max_orbs = max_int(max_orbs, "jak_goal_orbs_delta")
         max_flies = max_int(max_flies, "jak_goal_flies_delta")
         max_completion = max(max_completion, int(row.get("jak_goal_completion_percent") or 0))
-        max_position_buckets = max(max_position_buckets, int(row.get("jak_distinct_position_buckets") or 0))
-        max_no_progress = max(max_no_progress, float(row.get("jak_goal_no_progress_age") or 0.0))
+        max_position_buckets = max(
+            max_position_buckets,
+            int(row.get("jak_distinct_position_buckets") or 0),
+        )
+        max_no_progress = max(
+            max_no_progress,
+            float(row.get("jak_goal_no_progress_age") or 0.0),
+        )
         progress_events = max_counter(progress_events, "jak_goal_progress_events")
         replans = max_counter(replans, "jak_goal_replans")
         executed_replans = max_counter(executed_replans, "jak_executed_objective_replans")
