@@ -49,8 +49,8 @@ observability:
 profile:
   name: jak_and_daxter
 
-  # V11 keeps V10's purposeful Jak skills but fixes the mid-session ownership gate
-  # using thresholds calibrated from the 2026-08-23 live swim-stall failure bundle.
+  # V12 keeps V10's purposeful skills and V11's adaptive ownership, then replaces
+  # the inherited infinite shoreline arc with progress-aware swim-to-shore recovery.
   mode: production
   template_threshold: 0.84
   random_seed: 2001
@@ -140,6 +140,31 @@ profile:
   water_direction_reconsider_seconds: 1.75
   water_direction_flip_margin: 0.10
 
+  # V12 closed-loop water navigation, calibrated from the V11 soak. That run spent
+  # 885 verbose samples in shoreline-seek, hit three watchdog recoveries, and briefly
+  # reached ~0.06 water coverage without recognizing the shore-exit opportunity.
+  water_progress_epsilon: 0.025
+  water_progress_timeout: 5.0
+  water_stall_motion_max: 0.0045
+  water_stall_seconds: 3.0
+  water_worsen_margin: 0.14
+  water_direction_lock_seconds: 4.0
+  water_near_shore_total: 0.14
+  water_near_shore_center: 0.18
+  water_near_shore_side: 0.08
+  water_shore_hop_seconds: 3.2
+  water_shore_hop_interval: 0.65
+  water_shore_hop_forward: 0.78
+  water_shore_hop_turn: 0.22
+  water_uturn_seconds: 1.15
+  water_uturn_turn: 0.94
+  water_uturn_camera: 0.52
+  water_seek_forward: 0.68
+  water_seek_turn: 0.30
+  water_seek_camera: 0.12
+  water_backtrack_v12_seconds: 1.25
+  water_backtrack_v12_speed: 0.76
+
   # V11 adaptive camera-response ownership. Across 318 deduplicated probe cycles from
   # the live bundle, a 0.0036 floor with baseline*1.25+0.0016 accepted about half of
   # controller-correlated camera pulses; the previous 0.0042 tuning accepted ~26% and
@@ -169,7 +194,8 @@ profile:
   post_reacquire_turn: 0.60
   post_reacquire_camera: 0.32
 
-  # Fast local obstacle/contact recovery from V9.
+  # Fast local obstacle/contact recovery from V9. V12 deliberately disarms this while
+  # coherent water owns navigation because animated water can mask zero translation.
   local_stuck_motion_threshold: 0.0035
   local_stuck_trigger_seconds: 2.2
   local_stuck_command_warmup_seconds: 0.55
