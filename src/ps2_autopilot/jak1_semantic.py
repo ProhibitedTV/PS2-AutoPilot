@@ -16,6 +16,8 @@ SYMBOL_SCAN_END = 0x02000000  # retail PS2 EE RAM is 32 MiB
 SYMBOL_MAP_BYTES = 0xFF00
 METER_LENGTH = 4096.0
 TARGET_ROOT_SCAN_BYTES = 0x1000
+TYPE_PARENT_OFFSET = 0x4
+TYPE_ANCESTRY_MAX_DEPTH = 32
 
 
 class MemoryReader(Protocol):
@@ -211,7 +213,61 @@ class Jak1GoalResolver:
             raise Jak1SemanticError(f"type {type_name!r} has implausible size {allocated}/{padded}")
         return allocated, padded
 
-    def _typed_pointer(self, address: int, expected_type: int) -> int | None:
+    def _type_tags_descending_from(
+        self, type_tags: Iterable[int], expected_type: int
+    ) -> set[int]:
+        """Return candidate GOAL type tags that are `expected_type` or descendants.
+
+        Jak 1's runtime Type layout stores the parent Type pointer at +0x4. Root is
+        declared as `trsqv`, but process-drawable explicitly permits a more-specific
+        root object (for example a collision shape). Exact tag equality therefore
+        rejects valid retail objects; walking the runtime ancestry is the portable
+        check we actually want.
+        """
+
+        expected = int(expected_type)
+        originals = {
+            int(tag)
+            for tag in type_tags
+            if self._valid_ee_ptr(int(tag))
+        }
+        accepted = {tag for tag in originals if tag == expected}
+        active: dict[int, int] = {
+            tag: tag for tag in originals if tag != expected
+        }
+
+        for _depth in range(TYPE_ANCESTRY_MAX_DEPTH):
+            if not active:
+                break
+            current_types = sorted(set(active.values()))
+            try:
+                parents = self.reader.read32_many(
+                    type_ptr + TYPE_PARENT_OFFSET for type_ptr in current_types
+                )
+            except Exception:
+                break
+            parent_by_type = {
+                current: int(parent)
+                for current, parent in zip(current_types, parents)
+            }
+            next_active: dict[int, int] = {}
+            for original, current in active.items():
+                parent = parent_by_type.get(current, 0)
+                if parent == expected:
+                    accepted.add(original)
+                    continue
+                if (
+                    parent == current
+                    or not self._valid_ee_ptr(parent)
+                ):
+                    continue
+                next_active[original] = parent
+            active = next_active
+        return accepted
+
+    def _typed_pointer(
+        self, address: int, expected_type: int, *, allow_subtypes: bool = False
+    ) -> int | None:
         if not self._valid_ee_ptr(address):
             return None
         try:
@@ -221,10 +277,13 @@ class Jak1GoalResolver:
         if not self._valid_ee_ptr(value) or value < 4:
             return None
         try:
-            if int(self.reader.read32(value - 4)) == expected_type:
-                return value
+            tag = int(self.reader.read32(value - 4))
         except Exception:
-            pass
+            return None
+        if tag == int(expected_type):
+            return value
+        if allow_subtypes and tag in self._type_tags_descending_from([tag], expected_type):
+            return value
         return None
 
     def _root_vectors(
@@ -249,15 +308,19 @@ class Jak1GoalResolver:
         root_type = self.symbol("trsqv").value
 
         if self._root_offset is not None:
-            root = self._typed_pointer(target_ptr + self._root_offset, root_type)
+            root = self._typed_pointer(
+                target_ptr + self._root_offset,
+                root_type,
+                allow_subtypes=True,
+            )
             if root is not None and self._root_vectors(root) is not None:
                 self._last_target_ptr = target_ptr
                 return root, self._root_offset
 
         # OpenGOAL declares process-drawable.root as the first process-drawable
-        # field and as a trsqv reference. Discover that reference structurally from
-        # the live object instead of translating runtime type-size words into an
-        # assumed inherited offset.
+        # field and as a trsqv reference, and notes that the object may have a more
+        # specific type. Discover the reference structurally and validate subtype
+        # ancestry through the retail GOAL Type.parent chain.
         offsets = list(range(0, TARGET_ROOT_SCAN_BYTES, 4))
         words = self.reader.read32_many(target_ptr + offset for offset in offsets)
         pointer_candidates: list[tuple[int, int]] = [
@@ -265,14 +328,20 @@ class Jak1GoalResolver:
             for offset, value in zip(offsets, words)
             if self._valid_ee_ptr(int(value)) and int(value) >= 4
         ]
+        descendant_tags: set[int] = set()
+        unique_tags: set[int] = set()
         if pointer_candidates:
             tags = self.reader.read32_many(value - 4 for _offset, value in pointer_candidates)
+            unique_tags = {
+                int(tag) for tag in tags if self._valid_ee_ptr(int(tag))
+            }
+            descendant_tags = self._type_tags_descending_from(unique_tags, root_type)
             typed = [
-                (offset, value)
+                (offset, value, int(tag))
                 for (offset, value), tag in zip(pointer_candidates, tags)
-                if int(tag) == int(root_type)
+                if int(tag) in descendant_tags
             ]
-            for offset, root in sorted(typed, key=lambda item: item[0]):
+            for offset, root, _tag in sorted(typed, key=lambda item: item[0]):
                 if self._root_vectors(root) is None:
                     continue
                 self._root_offset = offset
@@ -285,8 +354,9 @@ class Jak1GoalResolver:
             target_ptr + offset - 4 for offset in offsets if target_ptr + offset >= 4
         ]
         inline_tags = self.reader.read32_many(inline_addresses)
+        inline_descendants = self._type_tags_descending_from(inline_tags, root_type)
         for offset, tag in zip(offsets, inline_tags):
-            if int(tag) != int(root_type):
+            if int(tag) not in inline_descendants:
                 continue
             root = target_ptr + offset
             if self._root_vectors(root) is not None:
@@ -300,9 +370,11 @@ class Jak1GoalResolver:
         except Exception:
             pass
         raise Jak1SemanticError(
-            "could not locate target.root trsqv by structural scan "
+            "could not locate target.root trsqv/subtype by structural scan "
             f"(target=0x{target_ptr:08X}, trsqv_type=0x{int(root_type):08X}, "
-            f"scanned={TARGET_ROOT_SCAN_BYTES} bytes, process_size_hint={process_hint})"
+            f"scanned={TARGET_ROOT_SCAN_BYTES} bytes, pointers={len(pointer_candidates)}, "
+            f"unique_type_tags={len(unique_tags)}, trsqv_descendant_tags={len(descendant_tags)}, "
+            f"process_size_hint={process_hint})"
         )
 
     @staticmethod

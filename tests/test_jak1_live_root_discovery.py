@@ -50,8 +50,8 @@ def _resolver(mem: FakeMemory) -> Jak1GoalResolver:
     return resolver
 
 
-def _write_valid_trsqv(mem: FakeMemory, root: int, trsqv_type: int) -> None:
-    mem.write32(root - 4, trsqv_type)
+def _write_valid_trsqv(mem: FakeMemory, root: int, actual_type: int) -> None:
+    mem.write32(root - 4, actual_type)
     mem.write_f32(root + 0, 4096.0)
     mem.write_f32(root + 4, 8192.0)
     mem.write_f32(root + 8, 12288.0)
@@ -77,6 +77,44 @@ def test_target_root_structural_scan_is_not_bound_to_process_size_metadata():
     assert offset == root_offset
 
 
+def test_target_root_accepts_runtime_subtype_of_trsqv():
+    mem = FakeMemory()
+    resolver = _resolver(mem)
+    target = 0x00400004
+    root = 0x00410004
+    trsqv_type = resolver.symbols["trsqv"].value
+    collide_shape_type = 0x00501004
+
+    # Jak 1's process-drawable declaration explicitly allows root to be a more
+    # specific type. Runtime Type.parent at +4 proves the subtype relationship.
+    mem.write32(collide_shape_type + 4, trsqv_type)
+    mem.write32(target + 0x70, root)
+    _write_valid_trsqv(mem, root, collide_shape_type)
+
+    found, offset = resolver._find_target_root(target)
+    assert found == root
+    assert offset == 0x70
+
+
+def test_target_root_accepts_multi_level_trsqv_descendant():
+    mem = FakeMemory()
+    resolver = _resolver(mem)
+    target = 0x00400004
+    root = 0x00410004
+    trsqv_type = resolver.symbols["trsqv"].value
+    collide_shape_type = 0x00501004
+    target_root_type = 0x00501104
+
+    mem.write32(target_root_type + 4, collide_shape_type)
+    mem.write32(collide_shape_type + 4, trsqv_type)
+    mem.write32(target + 0x90, root)
+    _write_valid_trsqv(mem, root, target_root_type)
+
+    found, offset = resolver._find_target_root(target)
+    assert found == root
+    assert offset == 0x90
+
+
 def test_target_root_structural_scan_rejects_typed_but_invalid_vector_candidate():
     mem = FakeMemory()
     resolver = _resolver(mem)
@@ -97,19 +135,43 @@ def test_target_root_structural_scan_rejects_typed_but_invalid_vector_candidate(
     assert offset == 0x2A0
 
 
-def test_cached_root_offset_is_revalidated_for_recreated_target():
+def test_unrelated_basic_pointer_is_not_accepted_as_root():
+    mem = FakeMemory()
+    resolver = _resolver(mem)
+    target = 0x00400004
+    root = 0x00410004
+    unrelated = 0x00408004
+    trsqv_type = resolver.symbols["trsqv"].value
+    process_type = resolver.symbols["process"].value
+    unrelated_type = 0x00502004
+
+    mem.write32(unrelated_type + 4, process_type)
+    mem.write32(target + 0x40, unrelated)
+    _write_valid_trsqv(mem, unrelated, unrelated_type)
+
+    mem.write32(target + 0xA0, root)
+    _write_valid_trsqv(mem, root, trsqv_type)
+
+    found, offset = resolver._find_target_root(target)
+    assert found == root
+    assert offset == 0xA0
+
+
+def test_cached_root_offset_is_revalidated_for_recreated_target_subtype():
     mem = FakeMemory()
     resolver = _resolver(mem)
     trsqv_type = resolver.symbols["trsqv"].value
+    derived_type = 0x00501004
+    mem.write32(derived_type + 4, trsqv_type)
 
     first_target = 0x00400004
     first_root = 0x00410004
     mem.write32(first_target + 0x2A0, first_root)
-    _write_valid_trsqv(mem, first_root, trsqv_type)
+    _write_valid_trsqv(mem, first_root, derived_type)
     assert resolver._find_target_root(first_target) == (first_root, 0x2A0)
 
     second_target = 0x00430004
     second_root = 0x00440004
     mem.write32(second_target + 0x2A0, second_root)
-    _write_valid_trsqv(mem, second_root, trsqv_type)
+    _write_valid_trsqv(mem, second_root, derived_type)
     assert resolver._find_target_root(second_target) == (second_root, 0x2A0)
