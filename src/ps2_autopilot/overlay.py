@@ -14,6 +14,10 @@ class OverlayServer:
     State is memory-backed so transient Windows file locks cannot interrupt gameplay.
     ``index_file`` lets each game expose a viewer-facing layout without making the
     application shell or default URL game-specific.
+
+    When AutoPilot is launched by the 24/7 supervisor, the supervisor's prefixed
+    recovery fields are merged into the normal state payload. Direct/manual AutoPilot
+    runs deliberately ignore any stale supervisor file from an older session.
     """
 
     def __init__(
@@ -42,9 +46,40 @@ class OverlayServer:
         self.state_write_failures = 0
         self.state_write_last_error: str | None = None
 
+        self._supervised = os.environ.get("PS2_AUTOPILOT_SUPERVISED") == "1"
+        configured_supervisor_state = os.environ.get("PS2_AUTOPILOT_SUPERVISOR_STATE")
+        self._supervisor_state_path = (
+            Path(configured_supervisor_state)
+            if configured_supervisor_state
+            else self.runtime / "supervisor.json"
+        )
+        self._supervisor_state_mtime_ns: int | None = None
+        self._supervisor_state_cache: dict = {}
+
     def state_payload(self) -> str:
         with self._state_lock:
             return self._state_payload
+
+    def _supervisor_fields(self) -> dict:
+        if not self._supervised:
+            return {}
+        try:
+            stat = self._supervisor_state_path.stat()
+            if self._supervisor_state_mtime_ns == stat.st_mtime_ns:
+                return dict(self._supervisor_state_cache)
+            raw = json.loads(self._supervisor_state_path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                return dict(self._supervisor_state_cache)
+            filtered = {
+                str(key): value
+                for key, value in raw.items()
+                if str(key).startswith("supervisor_")
+            }
+            self._supervisor_state_mtime_ns = stat.st_mtime_ns
+            self._supervisor_state_cache = filtered
+            return dict(filtered)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return dict(self._supervisor_state_cache)
 
     def _record_state_write_failure(self, exc: OSError) -> None:
         self.state_write_failures += 1
@@ -86,7 +121,11 @@ class OverlayServer:
         now = time.monotonic()
         if not force and now - self._last_state_write < self.state_interval_seconds:
             return False
-        payload = json.dumps(state, separators=(",", ":"), ensure_ascii=False, default=str)
+        merged_state = dict(state)
+        merged_state.update(self._supervisor_fields())
+        payload = json.dumps(
+            merged_state, separators=(",", ":"), ensure_ascii=False, default=str
+        )
         with self._state_lock:
             now = time.monotonic()
             if not force and now - self._last_state_write < self.state_interval_seconds:
