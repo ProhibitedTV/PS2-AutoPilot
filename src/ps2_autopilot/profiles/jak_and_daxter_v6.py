@@ -8,14 +8,19 @@ from .jak_and_daxter_v5 import JakAndDaxterV5Profile
 
 
 class JakAndDaxterV6Profile(JakAndDaxterV5Profile):
-    """Recover the all-empty save-file selector when stylized OCR misses it.
+    """Recover stylized Jak save transactions when OCR is incomplete.
 
-    Live V5 evidence showed the exact ``SELECT FILE TO SAVE TO`` screen remaining
-    UNKNOWN for 25 seconds: OCR did not produce enough semantic text to own the
-    transaction, so the watchdog correctly stayed neutral. V6 adds a deliberately
-    narrow visual fallback calibrated from that real 1920x1080 capture. It requires
-    the stable title/menu layout plus all four EMPTY-row text bands before V5 is
-    allowed to send its single bounded Cross.
+    V6 originally added a narrow visual fallback for the all-empty save-file selector.
+    Live PCSX2 2.6.3 testing later exposed the inverse boundary: if AutoPilot is
+    restarted while already sitting on the overwrite YES/NO confirmation, a fresh OCR
+    instance may fail to recover enough stylized text to identify the prompt. The
+    production policy then correctly fails closed, but cannot make progress.
+
+    Keep semantic menu evidence strongest, retain the existing four-empty selector
+    fallback, and add a second layout-specific visual signature for the save
+    confirmation. It requires the distinctive four message bands plus a lime YES/NO
+    choice in the calibrated bottom row, so it does not turn arbitrary UNKNOWN screens
+    into generic confirmation presses.
     """
 
     # Normalized regions calibrated from the live 1920x1080 selector capture. The
@@ -30,6 +35,16 @@ class JakAndDaxterV6Profile(JakAndDaxterV5Profile):
         (0.34, 0.47, 0.700, 0.760),
     )
     SAVE_SELECTOR_CONTINUE_ROI = (0.18, 0.60, 0.830, 0.900)
+
+    # Live overwrite-confirmation layout from PCSX2 2.6.3 at 1024x576. These bands
+    # cover the three centered explanatory rows and the separate "DO YOU WISH..." row.
+    # The YES/NO choices reuse V4's independently calibrated SAVE_CHOICE_ROIS.
+    SAVE_CONFIRM_MESSAGE_ROIS = (
+        (0.09, 0.82, 0.285, 0.355),
+        (0.12, 0.84, 0.355, 0.425),
+        (0.30, 0.66, 0.425, 0.495),
+        (0.12, 0.67, 0.655, 0.735),
+    )
 
     def __init__(self, cfg: dict) -> None:
         super().__init__(cfg)
@@ -55,12 +70,33 @@ class JakAndDaxterV6Profile(JakAndDaxterV5Profile):
             0.005, min(0.50, float(cfg.get("save_selector_visual_continue_edge", 0.03)))
         )
 
+        # The overwrite layout is intentionally more tolerant than OCR but still asks
+        # for every fixed message band plus a verified highlighted choice. The moving
+        # translucent world background is not used as a stability requirement.
+        self.save_confirm_visual_message_white = max(
+            0.005, min(0.50, float(cfg.get("save_confirm_visual_message_white", 0.018)))
+        )
+        self.save_confirm_visual_message_edge = max(
+            0.003, min(0.40, float(cfg.get("save_confirm_visual_message_edge", 0.012)))
+        )
+        self.save_confirm_visual_required_hits = max(
+            3,
+            min(
+                len(self.SAVE_CONFIRM_MESSAGE_ROIS),
+                int(cfg.get("save_confirm_visual_required_hits", 4)),
+            ),
+        )
+
         self.save_file_selector_source = "none"
         self.save_selector_visual_row_hits = 0
         self.save_selector_visual_title_white_ratio = 0.0
         self.save_selector_visual_title_edge_ratio = 0.0
         self.save_selector_visual_continue_white_ratio = 0.0
         self.save_selector_visual_continue_edge_ratio = 0.0
+
+        self.save_prompt_visual_message_hits = 0
+        self.save_prompt_visual_choice_visible = False
+        self.save_prompt_visual_fallbacks = 0
 
     @staticmethod
     def _roi_text_metrics(
@@ -123,6 +159,51 @@ class JakAndDaxterV6Profile(JakAndDaxterV5Profile):
             and continue_edge >= self.save_selector_visual_continue_edge
         )
 
+    def _visual_save_confirmation(self, ctx: ProfileContext) -> bool:
+        metrics = [
+            self._roi_text_metrics(ctx.frame, roi) for roi in self.SAVE_CONFIRM_MESSAGE_ROIS
+        ]
+        self.save_prompt_visual_message_hits = sum(
+            1
+            for white_ratio, edge_ratio in metrics
+            if white_ratio >= self.save_confirm_visual_message_white
+            and edge_ratio >= self.save_confirm_visual_message_edge
+        )
+
+        (
+            yes_selected,
+            no_selected,
+            yes_ratio,
+            no_ratio,
+        ) = self._visual_save_choice_evidence(ctx.frame)
+        self.save_prompt_visual_choice_visible = bool(yes_selected or no_selected)
+
+        compact = self._compact_text(self.last_ocr_text)
+        destructive = any(marker in compact for marker in self.SAVE_DESTRUCTIVE_MARKERS)
+        visible = bool(
+            not destructive
+            and self.save_prompt_visual_choice_visible
+            and self.save_prompt_visual_message_hits >= self.save_confirm_visual_required_hits
+        )
+        if not visible:
+            return False
+
+        # Populate V4's ordinary save-prompt state so its bounded LEFT->YES->CROSS
+        # transaction remains the only code allowed to act on the confirmation.
+        self.save_prompt_visible = True
+        self.save_prompt_kind = "overwrite"
+        self.save_prompt_marker_count = max(self.save_prompt_marker_count, 1)
+        self.save_yes_selected = yes_selected
+        self.save_no_selected = no_selected
+        self.save_yes_green_ratio = yes_ratio
+        self.save_no_green_ratio = no_ratio
+        self.title_gate_visible = False
+        self.main_menu_visible = False
+        self.save_file_selector_visible = False
+        self.save_file_empty_count = 0
+        self.save_file_selector_source = "suppressed-by-visual-save-confirmation"
+        return True
+
     def _read_ocr_title_gate(self, ctx: ProfileContext) -> bool:
         parent_visible = super()._read_ocr_title_gate(ctx)
 
@@ -135,6 +216,14 @@ class JakAndDaxterV6Profile(JakAndDaxterV5Profile):
             self.save_file_selector_visible = False
             self.save_file_empty_count = 0
             self.save_file_selector_source = "suppressed-by-stronger-menu"
+            return True
+
+        # On a fresh AutoPilot restart there may be no useful OCR history at all. The
+        # live overwrite screen has a distinctive fixed message/choice layout, so use
+        # that signature before trusting possibly-stale selector OCR or the weaker
+        # four-empty geometry fallback.
+        if self._visual_save_confirmation(ctx):
+            self.save_prompt_visual_fallbacks += 1
             return True
 
         if self.save_file_selector_visible:
@@ -172,6 +261,9 @@ class JakAndDaxterV6Profile(JakAndDaxterV5Profile):
                 "jak_save_selector_visual_continue_edge_ratio": round(
                     self.save_selector_visual_continue_edge_ratio, 4
                 ),
+                "jak_save_prompt_visual_message_hits": self.save_prompt_visual_message_hits,
+                "jak_save_prompt_visual_choice_visible": self.save_prompt_visual_choice_visible,
+                "jak_save_prompt_visual_fallbacks": self.save_prompt_visual_fallbacks,
             }
         )
         return state
