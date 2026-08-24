@@ -25,3 +25,27 @@ jobs:
         run: ruff check src tests
       - name: Test
         run: pytest -q
+
+  windows-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install Windows runtime
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,virtual-gamepad]"
+      - name: Compile
+        shell: pwsh
+        run: python -m compileall -q src
+      - name: Import Windows runtime dependencies
+        shell: pwsh
+        run: python -c "import win32gui, pydirectinput, vgamepad; import ps2_autopilot.window; import ps2_autopilot.controllers.virtual_gamepad"
+      - name: Smoke registry and console contracts
+        shell: pwsh
+        run: pytest -q tests/test_profile_registry.py tests/test_console_entrypoints.py
