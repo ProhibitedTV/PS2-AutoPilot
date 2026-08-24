@@ -18,6 +18,7 @@ class ProfileContext:
     now: float
     previous_frame: np.ndarray | None = None
     semantic: dict[str, Any] = field(default_factory=dict)
+    performance: dict[str, Any] = field(default_factory=dict)
 
 
 class GameProfile(ABC):
