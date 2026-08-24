@@ -11,6 +11,7 @@ from .controllers.keyboard import KeyboardController
 from .controllers.virtual_gamepad import VirtualGamepadController
 from .observability import RuntimeObserver, TracingController
 from .overlay import OverlayServer
+from .pine import PineTelemetryBridge
 from .profiles.base import ProfileContext
 from .profiles.registry import build_profile, get_profile_spec
 from .runtime_retention import RuntimeRetention
@@ -108,6 +109,11 @@ class AutopilotApp:
             project_root / "profiles" / self.profile_spec.template_namespace / "templates"
         )
 
+        # Optional read-only semantic side channel. The bridge is intentionally
+        # identity-gated and never exposes writes; unavailable PINE simply produces
+        # stale/unavailable telemetry and leaves screenshot-only profiles unchanged.
+        self.semantic_bridge = PineTelemetryBridge(dict(raw.get("semantic_telemetry", {})))
+
         self.overlay: OverlayServer | None = None
         overlay_cfg = raw.get("overlay", {})
         if overlay_cfg.get("enabled", True):
@@ -181,12 +187,14 @@ class AutopilotApp:
                 previous = current_frame
                 template = self.detector.best_match(current_frame)
                 status = self.watchdog.update(motion)
+                semantic = self.semantic_bridge.poll(started)
                 ctx = ProfileContext(
                     frame=current_frame,
                     motion=motion,
                     template=template,
                     now=started,
                     previous_frame=previous_for_ctx,
+                    semantic=semantic,
                 )
 
                 policy_started = time.perf_counter()
@@ -225,6 +233,7 @@ class AutopilotApp:
                     "loop_budget_ms": round(period * 1000.0, 2),
                     "loop_overruns": self._loop_overruns,
                     "opencv_threads": self.opencv_threads,
+                    **semantic,
                 }
                 telemetry = getattr(self.profile, "telemetry", None)
                 if callable(telemetry):
@@ -272,6 +281,7 @@ class AutopilotApp:
             raise
         finally:
             self.controller.release_all()
+            self.semantic_bridge.close()
             if self.overlay:
                 self.overlay.write_state(
                     {"status": "stopped", **self._identity_state()}, force=True
