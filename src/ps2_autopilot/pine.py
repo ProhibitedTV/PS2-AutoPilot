@@ -123,12 +123,7 @@ class PineClient:
         return float(struct.unpack("<f", struct.pack("<I", self.read32(address)))[0])
 
     def read32_many(self, addresses: Iterable[int]) -> list[int]:
-        """Read many arbitrary u32 addresses with batched PINE commands.
-
-        The retail GOAL symbol resolver needs to inspect thousands of small words.
-        One socket round trip per word would make that impractical; PINE supports
-        multiple commands in one frame, so chunks remain both read-only and fast.
-        """
+        """Read many arbitrary u32 addresses with batched PINE commands."""
 
         values = [int(address) for address in addresses]
         if not values:
@@ -234,6 +229,9 @@ class PineTelemetryBridge:
         self.interval = max(0.05, float(cfg.get("interval_seconds", 0.25)))
         self.identity_interval = max(1.0, float(cfg.get("identity_interval_seconds", 5.0)))
         self.retry_interval = max(0.5, float(cfg.get("retry_interval_seconds", 2.0)))
+        self.schema_retry_interval = max(
+            2.0, float(cfg.get("schema_retry_interval_seconds", 10.0))
+        )
         self.expected_ids = {
             str(v).strip().upper() for v in cfg.get("expected_game_ids", []) if str(v).strip()
         }
@@ -252,17 +250,16 @@ class PineTelemetryBridge:
         self._next_poll_at = 0.0
         self._next_identity_at = 0.0
         self._next_retry_at = 0.0
+        self._next_schema_at = 0.0
         self._jak1_resolver: Jak1GoalResolver | None = None
         self._resolver_identity: tuple[str | None, str | None] | None = None
+        self._schema_fields: dict[str, Any] = {}
 
     def close(self) -> None:
         self.client.close()
 
     def _identity_verified(self) -> bool:
         s = self.snapshot
-        # Arbitrary configured RAM addresses remain strictly build-gated. The Jak 1
-        # GOAL resolver is different: it finds named objects structurally and validates
-        # runtime type tags, so it does not require a CRC-specific absolute layout.
         if self.fields_cfg and not (self.expected_ids or self.expected_crcs):
             return False
         gates = 0
@@ -291,6 +288,8 @@ class PineTelemetryBridge:
         if old_identity != new_identity:
             self._jak1_resolver = None
             self._resolver_identity = None
+            self._schema_fields = {}
+            self._next_schema_at = 0.0
         self._next_identity_at = now + self.identity_interval
 
     def _read_field(self, spec: Any) -> Any:
@@ -317,7 +316,7 @@ class PineTelemetryBridge:
             raise PineError(f"unsupported semantic field type {kind!r}")
         return readers[kind](address)
 
-    def _jak1_fields(self) -> dict[str, Any]:
+    def _jak1_fields(self, now: float) -> dict[str, Any]:
         if not self.auto_jak1_symbols:
             return {}
         title = str(self.snapshot.game_title or "").lower()
@@ -330,14 +329,25 @@ class PineTelemetryBridge:
         if self._jak1_resolver is None or self._resolver_identity != identity:
             self._jak1_resolver = Jak1GoalResolver(self.client)
             self._resolver_identity = identity
+            self._schema_fields = {}
+            self._next_schema_at = 0.0
+        if now < self._next_schema_at and self._schema_fields:
+            return dict(self._schema_fields)
         try:
             fields = self._jak1_resolver.snapshot()
         except Jak1SemanticError as exc:
-            return {
+            fields = {
                 "pine_schema_verified": False,
                 "pine_schema_error": str(exc),
                 "pine_semantic_schema": "jak1-goal-symbols-v1",
             }
+            # A scan can be substantial. Do not rerun it every 250 ms while the game
+            # is still booting/loading or if the current build does not match.
+            self._next_schema_at = now + self.schema_retry_interval
+        else:
+            # Once the symbol map is cached, refreshing live pointers/values is cheap.
+            self._next_schema_at = now + self.interval
+        self._schema_fields = dict(fields)
         return fields
 
     def poll(self, now: float | None = None) -> dict[str, Any]:
@@ -359,11 +369,9 @@ class PineTelemetryBridge:
             if self.snapshot.verified:
                 for name, spec in self.fields_cfg.items():
                     fields[str(name)] = self._read_field(spec)
-            auto_fields = self._jak1_fields()
+            auto_fields = self._jak1_fields(now)
             fields.update(auto_fields)
             if auto_fields.get("pine_schema_verified") is True:
-                # Structural GOAL symbol + type-tag + count sanity validation is the
-                # semantic trust gate for the portable Jak schema.
                 self.snapshot.verified = True
             self.snapshot.fields = fields
             self.snapshot.available = True
