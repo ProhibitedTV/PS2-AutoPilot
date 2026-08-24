@@ -47,7 +47,7 @@ def _retail_like_memory() -> FakeMemory:
     mem = FakeMemory()
     s7 = 0x00200004
     false_base = s7 - 4
-    false_string = 0x00300004
+    false_string = 0x00205004
     mem.write32(s7, s7)
     mem.write_goal_string(false_string, "#f")
     # OpenGOAL memory_dump_tool's #f probe reads base + 0xff38 + 4.
