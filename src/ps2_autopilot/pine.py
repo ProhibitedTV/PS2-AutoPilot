@@ -204,6 +204,11 @@ class PineTelemetryBridge:
 
     def _identity_verified(self) -> bool:
         s = self.snapshot
+        # Arbitrary memory addresses are build-specific. When semantic fields are
+        # configured, require a stable ID or CRC gate rather than trusting title text
+        # alone. With no fields, title-only verification remains useful diagnostics.
+        if self.fields_cfg and not (self.expected_ids or self.expected_crcs):
+            return False
         gates = 0
         okay = True
         if self.expected_ids:
