@@ -40,6 +40,7 @@ ps2-autopilot-soak-report = "ps2_autopilot.soak_report:main"
 ps2-autopilot-pine = "ps2_autopilot.pine_cli:main"
 ps2-autopilot-jak-report = "ps2_autopilot.jak_benchmark:main"
 ps2-autopilot-jak-graduation = "ps2_autopilot.jak_graduation:main"
+ps2-autopilot-jak-curriculum = "ps2_autopilot.jak_curriculum:main"
 ps2-autopilot-supervisor = "ps2_autopilot.supervisor_cli:main"
 
 [tool.setuptools.packages.find]
