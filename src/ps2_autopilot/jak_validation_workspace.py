@@ -36,6 +36,11 @@ def _workspace_config() -> dict[str, Any]:
         "expected_game_id": None,
         "expected_crc": None,
         "required_graduation_runs": DEFAULT_REQUIRED_RUNS,
+        # These are deliberately false. A directory full of logs is not proof that
+        # every run was a fresh boot/new save or that no human touched the controller.
+        # The operator must make both assertions explicitly after the evidence exists.
+        "graduation_autonomous_asserted": False,
+        "graduation_fresh_boots_asserted": False,
         "semantic_trace": "semantic/contact.jsonl",
         "route_manifest": "route.json",
         "curriculum_manifest": "curriculum.json",
@@ -49,7 +54,7 @@ def _runbook_text() -> str:
 
 This directory is an evidence workspace, not a set of pre-approved acceptance results.
 Every generated manifest starts intentionally incomplete. Do not fill coordinates,
-savestate paths, or review flags from guesses.
+savestate paths, review flags, or graduation assertions from guesses.
 
 ## 1. Verify semantic movement/contact
 
@@ -86,6 +91,14 @@ alone is not a pass.
 Store independent fresh-boot/new-save verbose logs in `graduation/`. The V23 target is
 five successful autonomous runs out of five, each proving four Power Cells, seven Scout
 Flies, Blue Eco door, cliff/platform sequence, return warp, and no intervention.
+
+After the run set is actually collected and verified, set BOTH of these values in
+`validation.json` to `true`:
+
+    "graduation_autonomous_asserted": true
+    "graduation_fresh_boots_asserted": true
+
+Those assertions are intentionally never inferred from file presence.
 
 ## 6. Check workspace status
 
@@ -158,6 +171,13 @@ def _path(root: Path, config: dict[str, Any], key: str) -> Path:
     return candidate if candidate.is_absolute() else root / candidate
 
 
+def _explicit_bool(config: dict[str, Any], key: str) -> bool:
+    value = config.get(key)
+    if not isinstance(value, bool):
+        raise ValidationWorkspaceError(f"validation.json field {key!r} must be true or false")
+    return value
+
+
 def status_workspace(root: Path) -> dict[str, Any]:
     root = root.expanduser()
     config = _load_config(root)
@@ -171,6 +191,8 @@ def status_workspace(root: Path) -> dict[str, Any]:
     except (TypeError, ValueError) as exc:
         raise ValidationWorkspaceError("required_graduation_runs must be an integer") from exc
 
+    autonomous_asserted = _explicit_bool(config, "graduation_autonomous_asserted")
+    fresh_boots_asserted = _explicit_bool(config, "graduation_fresh_boots_asserted")
     graduation_logs = (
         sorted(graduation_dir.glob("*.jsonl")) if graduation_dir.is_dir() else []
     )
@@ -182,8 +204,8 @@ def status_workspace(root: Path) -> dict[str, Any]:
         expected_game_id=config.get("expected_game_id") or None,
         expected_crc=config.get("expected_crc") or None,
         required_runs=required_runs,
-        autonomous_asserted=False,
-        fresh_boots_asserted=False,
+        autonomous_asserted=autonomous_asserted,
+        fresh_boots_asserted=fresh_boots_asserted,
     )
 
     if captures.is_file():
@@ -241,6 +263,8 @@ def status_workspace(root: Path) -> dict[str, Any]:
         "ready": all_passed,
         "required_graduation_runs": required_runs,
         "graduation_logs_found": len(graduation_logs),
+        "graduation_autonomous_asserted": autonomous_asserted,
+        "graduation_fresh_boots_asserted": fresh_boots_asserted,
         "acceptance": acceptance,
         "captures": capture_section,
         "route_summary": route_report,
@@ -263,11 +287,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        report = (
-            init_workspace(args.workspace, force=args.force)
-            if args.command == "init"
-            else status_workspace(args.workspace)
-        )
+        if args.command == "init":
+            report = init_workspace(args.workspace, force=args.force)
+            print(json.dumps(report, indent=2, sort_keys=True))
+            return 0
+
+        report = status_workspace(args.workspace)
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if report.get("ready") else 1
     except ValidationWorkspaceError as exc:
