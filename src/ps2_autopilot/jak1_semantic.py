@@ -15,6 +15,7 @@ SYMBOL_SCAN_START = 0x00100000
 SYMBOL_SCAN_END = 0x02000000  # retail PS2 EE RAM is 32 MiB
 SYMBOL_MAP_BYTES = 0xFF00
 METER_LENGTH = 4096.0
+TARGET_ROOT_SCAN_BYTES = 0x1000
 
 
 class MemoryReader(Protocol):
@@ -65,16 +66,11 @@ class Jak1GoalResolver:
         "game-info",
     )
 
-    # game-info field offsets derived from the decompiled Jak 1 type declaration.
-    # Fields before the byte arrays are naturally 4-byte aligned; both arrays are
-    # exactly 32 bytes, leaving buzzer-total and fuel at 88 and 92 respectively.
     GAME_INFO_MONEY_OFFSET = 16
     GAME_INFO_MONEY_TOTAL_OFFSET = 20
     GAME_INFO_BUZZER_TOTAL_OFFSET = 88
     GAME_INFO_FUEL_OFFSET = 92
 
-    # trsqv inherits trs: trans/rot/scale are 3 inline 16-byte vectors. transv is
-    # therefore the next inline vector at +48. OpenGOAL documents 4096 game units/m.
     TRSQV_TRANS_OFFSET = 0
     TRSQV_TRANSV_OFFSET = 48
 
@@ -135,8 +131,6 @@ class Jak1GoalResolver:
             for base, value in zip(bases, values):
                 if int(value) != base + 4:
                     continue
-                # OpenGOAL's retail Jak 1 memory dumper verifies #f through the
-                # SymInfo string pointer at candidate + ORIGINAL... + 4.
                 try:
                     string_ptr = self.reader.read32(
                         base + ORIGINAL_SYM_TO_STRING_OFFSET + 4
@@ -159,8 +153,6 @@ class Jak1GoalResolver:
         string_ptrs = self.reader.read32_many(info_addresses)
         values = self.reader.read32_many(symbol_addresses)
 
-        # Fetch up to 64 bytes for every plausible symbol name in a few batched PINE
-        # calls rather than issuing thousands of tiny round trips.
         valid: list[tuple[int, int, int]] = []
         name_word_addresses: list[int] = []
         for index, (sym_addr, ptr) in enumerate(zip(symbol_addresses, string_ptrs)):
@@ -205,6 +197,11 @@ class Jak1GoalResolver:
             raise Jak1SemanticError(f"GOAL symbol {name!r} not found") from exc
 
     def _type_sizes(self, type_name: str) -> tuple[int, int]:
+        """Expose runtime type-size metadata for diagnostics only.
+
+        Do not use these words as inherited field offsets. Live SCUS-97124 proved
+        that assumption is not portable enough for target.root discovery.
+        """
         type_ptr = self.symbol(type_name).value
         if not self._valid_ee_ptr(type_ptr):
             raise Jak1SemanticError(f"type {type_name!r} has invalid pointer 0x{type_ptr:08X}")
@@ -230,42 +227,88 @@ class Jak1GoalResolver:
             pass
         return None
 
-    def _find_target_root(self, target_ptr: int) -> tuple[int, int]:
-        if self._root_offset is not None and self._last_target_ptr == target_ptr:
-            root_type = self.symbol("trsqv").value
-            root = self._typed_pointer(target_ptr + self._root_offset, root_type)
-            if root is not None:
-                return root, self._root_offset
-            # Inline basics are less common but supported.
-            probe = target_ptr + self._root_offset
-            if probe >= 4 and int(self.reader.read32(probe - 4)) == root_type:
-                return probe, self._root_offset
+    def _root_vectors(
+        self, root_ptr: int
+    ) -> tuple[tuple[float, float, float], tuple[float, float, float]] | None:
+        try:
+            pos = self._finite_vec(
+                self.reader.read_f32(root_ptr + self.TRSQV_TRANS_OFFSET + axis * 4)
+                for axis in range(3)
+            )
+            vel = self._finite_vec(
+                self.reader.read_f32(root_ptr + self.TRSQV_TRANSV_OFFSET + axis * 4)
+                for axis in range(3)
+            )
+        except Exception:
+            return None
+        if max(abs(v) for v in pos) > 2.0e8 or max(abs(v) for v in vel) > 5.0e7:
+            return None
+        return pos, vel
 
-        allocated, padded = self._type_sizes("process")
+    def _find_target_root(self, target_ptr: int) -> tuple[int, int]:
         root_type = self.symbol("trsqv").value
-        centers = {allocated - 4, padded - 4, allocated, padded}
-        candidates = sorted(
-            {base + delta for base in centers for delta in range(-16, 17, 4) if base + delta >= 0}
-        )
-        for offset in candidates:
-            root = self._typed_pointer(target_ptr + offset, root_type)
-            if root is not None:
+
+        if self._root_offset is not None:
+            root = self._typed_pointer(target_ptr + self._root_offset, root_type)
+            if root is not None and self._root_vectors(root) is not None:
+                self._last_target_ptr = target_ptr
+                return root, self._root_offset
+
+        # OpenGOAL declares process-drawable.root as the first process-drawable
+        # field and as a trsqv reference. Discover that reference structurally from
+        # the live object instead of translating runtime type-size words into an
+        # assumed inherited offset.
+        offsets = list(range(0, TARGET_ROOT_SCAN_BYTES, 4))
+        words = self.reader.read32_many(target_ptr + offset for offset in offsets)
+        pointer_candidates: list[tuple[int, int]] = [
+            (offset, int(value))
+            for offset, value in zip(offsets, words)
+            if self._valid_ee_ptr(int(value)) and int(value) >= 4
+        ]
+        if pointer_candidates:
+            tags = self.reader.read32_many(value - 4 for _offset, value in pointer_candidates)
+            typed = [
+                (offset, value)
+                for (offset, value), tag in zip(pointer_candidates, tags)
+                if int(tag) == int(root_type)
+            ]
+            for offset, root in sorted(typed, key=lambda item: item[0]):
+                if self._root_vectors(root) is None:
+                    continue
                 self._root_offset = offset
                 self._last_target_ptr = target_ptr
                 return root, offset
-            inline = target_ptr + offset
-            if inline >= 4 and self._valid_ee_ptr(inline):
-                try:
-                    if int(self.reader.read32(inline - 4)) == root_type:
-                        self._root_offset = offset
-                        self._last_target_ptr = target_ptr
-                        return inline, offset
-                except Exception:
-                    pass
-        raise Jak1SemanticError("could not locate target.root trsqv from runtime type metadata")
+
+        # Defensive inline fallback. The source declaration is a reference, but this
+        # keeps the resolver fail-safe if a runtime representation differs.
+        inline_addresses = [
+            target_ptr + offset - 4 for offset in offsets if target_ptr + offset >= 4
+        ]
+        inline_tags = self.reader.read32_many(inline_addresses)
+        for offset, tag in zip(offsets, inline_tags):
+            if int(tag) != int(root_type):
+                continue
+            root = target_ptr + offset
+            if self._root_vectors(root) is not None:
+                self._root_offset = offset
+                self._last_target_ptr = target_ptr
+                return root, offset
+
+        process_hint = "unavailable"
+        try:
+            process_hint = "/".join(str(v) for v in self._type_sizes("process"))
+        except Exception:
+            pass
+        raise Jak1SemanticError(
+            "could not locate target.root trsqv by structural scan "
+            f"(target=0x{target_ptr:08X}, trsqv_type=0x{int(root_type):08X}, "
+            f"scanned={TARGET_ROOT_SCAN_BYTES} bytes, process_size_hint={process_hint})"
+        )
 
     @staticmethod
-    def _finite_vec(values: Iterable[float], *, limit: float = 1.0e9) -> tuple[float, float, float]:
+    def _finite_vec(
+        values: Iterable[float], *, limit: float = 1.0e9
+    ) -> tuple[float, float, float]:
         vals = tuple(float(v) for v in values)
         if len(vals) != 3 or not all(math.isfinite(v) and abs(v) <= limit for v in vals):
             raise Jak1SemanticError(f"invalid semantic vector {vals!r}")
@@ -317,20 +360,14 @@ class Jak1GoalResolver:
             "jak_orbs_spendable": self._count(money, 2000, "spendable_orbs"),
         }
 
-        # During menus/loading *target* may legitimately be #f. Progress remains valid;
-        # position is emitted only once a typed target object is present.
         if self._valid_ee_ptr(target_ptr) and target_ptr >= 4:
             if target_type is not None and int(self.reader.read32(target_ptr - 4)) != target_type:
                 raise Jak1SemanticError("*target* failed GOAL type-tag validation")
             root_ptr, root_offset = self._find_target_root(target_ptr)
-            raw_pos = self._finite_vec(
-                self.reader.read_f32(root_ptr + self.TRSQV_TRANS_OFFSET + axis * 4)
-                for axis in range(3)
-            )
-            raw_vel = self._finite_vec(
-                self.reader.read_f32(root_ptr + self.TRSQV_TRANSV_OFFSET + axis * 4)
-                for axis in range(3)
-            )
+            vectors = self._root_vectors(root_ptr)
+            if vectors is None:
+                raise Jak1SemanticError("target.root trsqv failed vector validation")
+            raw_pos, raw_vel = vectors
             pos_m = tuple(value / METER_LENGTH for value in raw_pos)
             vel_m = tuple(value / METER_LENGTH for value in raw_vel)
             data.update(
