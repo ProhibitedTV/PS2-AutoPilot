@@ -20,7 +20,7 @@ from .jak_and_daxter_v18 import JakAndDaxterV18Profile
 from .jak_and_daxter_v19 import JakAndDaxterV19Profile
 from .jak_and_daxter_v20 import JakAndDaxterV20Profile
 from .jak_and_daxter_v21 import JakAndDaxterV21Profile
-from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
+from .jak_and_daxter_v22_world import JakAndDaxterV22Profile
 from .madden2005_v4 import Madden2005V4Profile
 from .madden2005_v5 import Madden2005V5Profile
 from .madden2005_v6 import Madden2005V6Profile
