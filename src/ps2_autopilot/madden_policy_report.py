@@ -189,8 +189,13 @@ def build_policy_report(paths: Iterable[str | Path]) -> dict[str, Any]:
 
     plays_started = counters["plays_started"]
     plays_completed = counters["plays_completed"]
-    defensive_ticks = (
-        counters["defense_uncertain_ticks"] + counters["defense_contact_authorized_ticks"]
+    # V23 increments contact_suppressed for both uncertainty and verified far-pursuit,
+    # while contact_authorized is the complementary close-contact state. Their sum is
+    # therefore the clean classified defensive-tick denominator; adding uncertain
+    # ticks separately would double-count that subset.
+    classified_defensive_ticks = (
+        counters["defense_contact_suppressed_ticks"]
+        + counters["defense_contact_authorized_ticks"]
     )
 
     soak = build_soak_report([root for root, _states_value in sessions])
@@ -222,7 +227,7 @@ def build_policy_report(paths: Iterable[str | Path]) -> dict[str, Any]:
             "contact_suppressed_ticks": counters["defense_contact_suppressed_ticks"],
             "legacy_far_action_holds": counters["defense_action_holds"],
             "contact_authorized_pct_of_classified_ticks": _pct(
-                counters["defense_contact_authorized_ticks"], defensive_ticks
+                counters["defense_contact_authorized_ticks"], classified_defensive_ticks
             ),
         },
         "special_teams": {
