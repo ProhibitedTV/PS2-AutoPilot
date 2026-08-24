@@ -164,7 +164,11 @@ def evaluate_soak(
     min_games_completed: int = DEFAULT_SOAK_GAMES,
     max_unresolved_pct: float = DEFAULT_MAX_UNRESOLVED_PCT,
 ) -> dict[str, Any]:
-    min_hours = max(0.1, float(min_hours))
+    # Production defaults remain deliberately strict (8 hours). Do not clamp
+    # caller-supplied thresholds upward: tests, short qualification runs, and
+    # future staged acceptance profiles need to be able to request smaller windows
+    # explicitly without changing evaluator semantics.
+    min_hours = max(0.0, float(min_hours))
     min_games_completed = max(1, int(min_games_completed))
     max_unresolved_pct = max(0.0, float(max_unresolved_pct))
     report = build_report(roots)
