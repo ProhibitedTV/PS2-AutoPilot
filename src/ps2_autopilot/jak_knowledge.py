@@ -20,34 +20,29 @@ class JakProgression:
     scout_flies: int | None = None
 
 
-# The original game uses these persistent collectible totals. They are useful as
-# production telemetry/goal signals, but the runtime never assumes a value changed
-# unless it was actually observed in-game.
 COLLECTIBLE_TOTALS = {
     "power_cells": 101,
     "precursor_orbs": 2000,
     "scout_flies": 112,
 }
 
-# Research-backed progression gates. Different old guides disagree about the exact
-# late-game Lava Tube quota (72 vs 80), so only uncontroversial gates are encoded as
-# strict milestones here; late-game progress remains observation-driven.
 PROGRESSION_MILESTONES = (
     (20, "Fire Canyon access"),
     (45, "Mountain Pass access"),
 )
 
-# Controls differ substantially by gameplay mode. Keep this as machine-readable
-# documentation so policies do not accidentally reuse on-foot semantics on vehicles.
+# Control semantics are deliberately mode-specific. A full-game agent must never
+# assume that Cross/Square mean the same thing on foot, on a Zoomer or at a cannon.
 CONTROL_SCHEMAS: dict[JakControlMode, dict[str, str]] = {
     JakControlMode.ON_FOOT: {
         "left_stick": "move",
         "right_stick": "camera",
         "cross": "jump / double jump",
-        "square": "punch / yellow eco projectile",
-        "circle": "spin attack",
-        "triangle": "look-around view",
-        "l1/r1": "crouch or roll",
+        "square": "punch / dive attack follow-up / yellow eco projectile",
+        "circle": "spin attack / interact",
+        "triangle": "first-person camera",
+        "l1/r1": "crouch while still / roll while moving",
+        "l1/r1 + cross": "high jump while still / rolling long jump while moving",
         "l2/r2": "heads-up progress totals",
         "start": "pause / progress screen",
     },
@@ -55,31 +50,45 @@ CONTROL_SCHEMAS: dict[JakControlMode, dict[str, str]] = {
         "left_stick": "steer / pitch",
         "right_stick": "camera",
         "cross": "accelerate",
-        "l1/r1": "hop / tight turn",
+        "square": "brake",
+        "circle/square": "shoot yellow eco when powered",
+        "l1/r1": "hop / hard-turn modifier",
         "l2/r2": "heads-up progress totals",
         "start": "pause / progress screen",
     },
     JakControlMode.FLUT_FLUT: {
         "left_stick": "move",
         "right_stick": "camera",
-        "cross": "jump / flutter",
+        "cross": "jump / second press flutter",
         "square": "headbutt / yellow eco projectile",
+        "cross + square": "dive attack",
         "l2/r2": "heads-up progress totals",
         "start": "pause / progress screen",
     },
     JakControlMode.CANNON: {
         "left_stick": "aim",
-        "cross": "fire / charge shot",
+        "cross": "fire / hold for charged shot",
         "triangle": "leave cannon",
         "l2/r2": "heads-up progress totals",
         "start": "pause / progress screen",
     },
     JakControlMode.FISHING: {
-        "left_stick": "move fishing net laterally",
+        "left_stick": "move fishing net laterally into fish path",
+        "objective": "catch 200 pounds; avoid poisonous eel; missing 20 pounds resets",
     },
     JakControlMode.UNKNOWN: {},
 }
 
+# Campaign-wide specialist inventory. This is machine-readable planning metadata,
+# not an assertion that the current visual policy can already solve every challenge.
+# It tells future objective/skill planners which controller specialists must exist.
+CAMPAIGN_SPECIALISTS = {
+    "on_foot_platforming": JakControlMode.ON_FOOT,
+    "a_grav_zoomer": JakControlMode.ZOOMER,
+    "flut_flut": JakControlMode.FLUT_FLUT,
+    "lurker_cannon": JakControlMode.CANNON,
+    "fisherman_minigame": JakControlMode.FISHING,
+}
 
 _MODE_MARKERS: tuple[tuple[JakControlMode, tuple[str, ...]], ...] = (
     (JakControlMode.ZOOMER, ("zoomer", "a_grav", "agrav", "fire_canyon", "mountain_pass", "lava_tube")),
