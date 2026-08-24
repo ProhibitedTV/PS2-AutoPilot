@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import sys
+import time
 
 from .pine import PineClient, PineError
 
@@ -14,10 +16,28 @@ def _int_address(value: str) -> int:
         raise argparse.ArgumentTypeError(f"invalid address {value!r}") from exc
 
 
+def _watch_spec(value: str) -> tuple[str, int, str]:
+    # NAME=ADDRESS[:TYPE], for example jak_x=0x123456:f32
+    if "=" not in value:
+        raise argparse.ArgumentTypeError("watch fields use NAME=ADDRESS[:TYPE]")
+    name, raw = value.split("=", 1)
+    name = name.strip()
+    if not name:
+        raise argparse.ArgumentTypeError("watch field name cannot be empty")
+    if ":" in raw:
+        address_text, kind = raw.rsplit(":", 1)
+    else:
+        address_text, kind = raw, "u32"
+    kind = kind.strip().lower()
+    if kind not in {"u8", "u16", "u32", "u64", "s32", "f32"}:
+        raise argparse.ArgumentTypeError(f"unsupported watch type {kind!r}")
+    return name, _int_address(address_text.strip()), kind
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ps2-autopilot-pine",
-        description="Read-only diagnostic client for PCSX2 PINE IPC.",
+        description="Read-only diagnostic and memory-calibration client for PCSX2 PINE IPC.",
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=28011)
@@ -32,7 +52,104 @@ def build_parser() -> argparse.ArgumentParser:
         default="u32",
         nargs="?",
     )
+    watch = sub.add_parser(
+        "watch",
+        help="record named candidate addresses over time as JSONL; read-only",
+    )
+    watch.add_argument(
+        "fields",
+        nargs="+",
+        type=_watch_spec,
+        metavar="NAME=ADDRESS[:TYPE]",
+    )
+    watch.add_argument("--interval", type=float, default=0.20)
+    watch.add_argument("--duration", type=float, default=30.0)
+    watch.add_argument("--output", type=Path, default=None)
+    watch.add_argument(
+        "--changes-only",
+        action="store_true",
+        help="emit a row only when at least one candidate value changes",
+    )
     return parser
+
+
+def _readers(client: PineClient):
+    return {
+        "u8": client.read8,
+        "u16": client.read16,
+        "u32": client.read32,
+        "u64": client.read64,
+        "s32": client.read_s32,
+        "f32": client.read_f32,
+    }
+
+
+def _identity(client: PineClient) -> dict:
+    return {
+        "emulator_version": client.version(),
+        "game_title": client.title(),
+        "game_id": client.game_id(),
+        "game_crc": client.uuid(),
+        "game_version": client.game_version(),
+        "status": client.status(),
+    }
+
+
+def _watch(client: PineClient, args) -> int:
+    readers = _readers(client)
+    interval = max(0.05, float(args.interval))
+    duration = max(interval, float(args.duration))
+    started = time.monotonic()
+    deadline = started + duration
+    previous: dict[str, object] | None = None
+    output = None
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        output = args.output.open("w", encoding="utf-8")
+
+    identity = _identity(client)
+    header = {
+        "kind": "pine_watch_header",
+        "timestamp": time.time(),
+        **identity,
+        "fields": [
+            {"name": name, "address": f"0x{address:08X}", "type": kind}
+            for name, address, kind in args.fields
+        ],
+    }
+    header_line = json.dumps(header, sort_keys=True)
+    print(header_line)
+    if output is not None:
+        output.write(header_line + "\n")
+        output.flush()
+
+    try:
+        while time.monotonic() < deadline:
+            sample_started = time.monotonic()
+            values: dict[str, object] = {}
+            for name, address, kind in args.fields:
+                values[name] = readers[kind](address)
+            changed = previous is None or values != previous
+            if changed or not args.changes_only:
+                row = {
+                    "kind": "pine_watch_sample",
+                    "timestamp": time.time(),
+                    "elapsed_seconds": round(sample_started - started, 4),
+                    "values": values,
+                }
+                line = json.dumps(row, sort_keys=True)
+                print(line)
+                if output is not None:
+                    output.write(line + "\n")
+                    output.flush()
+            previous = values
+            elapsed = time.monotonic() - sample_started
+            if elapsed < interval:
+                time.sleep(interval - elapsed)
+    finally:
+        if output is not None:
+            output.close()
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,25 +157,13 @@ def main(argv: list[str] | None = None) -> int:
     client = PineClient(args.host, args.port, args.timeout)
     try:
         if args.command == "info":
-            payload = {
-                "emulator_version": client.version(),
-                "game_title": client.title(),
-                "game_id": client.game_id(),
-                "game_crc": client.uuid(),
-                "game_version": client.game_version(),
-                "status": client.status(),
-            }
-            print(json.dumps(payload, indent=2, sort_keys=True))
+            print(json.dumps(_identity(client), indent=2, sort_keys=True))
             return 0
 
-        readers = {
-            "u8": client.read8,
-            "u16": client.read16,
-            "u32": client.read32,
-            "u64": client.read64,
-            "s32": client.read_s32,
-            "f32": client.read_f32,
-        }
+        if args.command == "watch":
+            return _watch(client, args)
+
+        readers = _readers(client)
         value = readers[args.type](args.address)
         print(
             json.dumps(
