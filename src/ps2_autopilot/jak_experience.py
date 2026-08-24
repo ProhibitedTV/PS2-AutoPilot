@@ -127,14 +127,19 @@ class JakExperienceMemory:
         return tuple(result)
 
     def touch(self, keys: Iterable[str | None], now: float) -> None:
-        changed = False
+        """Update visitation only for cells already worth remembering.
+
+        Safe frames should not create thousands of persistent scene-hash entries or
+        force a JSON write every few seconds. The recent route itself lives in the
+        profile's in-memory trail; a cell is promoted into persistent memory only when
+        a consequence (danger/reward/escape outcome) occurs.
+        """
         for key in self._unique(keys):
-            cell = self._cell(key)
+            cell = self.cells.get(key)
+            if cell is None:
+                continue
             cell.visits += 1
             cell.last_at = max(cell.last_at, float(now))
-            changed = True
-        if changed:
-            self.dirty = True
 
     def score(self, keys: Iterable[str | None]) -> float:
         result = 0.0
