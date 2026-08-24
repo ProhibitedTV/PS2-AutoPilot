@@ -44,6 +44,7 @@ ps2-autopilot-jak-curriculum = "ps2_autopilot.jak_curriculum:main"
 ps2-autopilot-jak-semantic-check = "ps2_autopilot.jak_semantic_validation:main"
 ps2-autopilot-jak-route = "ps2_autopilot.jak_route_calibration:main"
 ps2-autopilot-jak-acceptance = "ps2_autopilot.jak_acceptance:main"
+ps2-autopilot-jak-captures = "ps2_autopilot.jak_capture_suite:main"
 ps2-autopilot-supervisor = "ps2_autopilot.supervisor_cli:main"
 
 [tool.setuptools.packages.find]
