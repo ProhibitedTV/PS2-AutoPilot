@@ -13,7 +13,7 @@ authors = [{name = "ProhibitedTV"}]
 dependencies = [
   "mss>=10.0.0",
   "numpy>=2.0.0",
-  "opencv-python>=4.10.0.84",
+  "opencv-python>=4.10.0.84,<5",
   "pywin32>=308; platform_system == 'Windows'",
   "pydirectinput>=1.0.4; platform_system == 'Windows'",
   "PyYAML>=6.0.2",
@@ -55,3 +55,9 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+# Start CI with correctness-focused rules. Broader style/cleanup families can be
+# enabled incrementally without turning unrelated legacy formatting into a release
+# blocker. These catch syntax/runtime-name errors and invalid control-flow constructs.
+select = ["E9", "F63", "F7", "F82"]
