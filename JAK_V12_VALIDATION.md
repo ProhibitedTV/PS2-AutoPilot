@@ -11,3 +11,5 @@ Validation criteria:
 - low-motion or no-progress swimming triggers a bounded U-turn instead of indefinite shoreline seek;
 - water-owned watchdog recovery schedules water navigation rather than generic land combos;
 - coherent-water ownership cancels unsafe skill state that could otherwise press Square/Circle while swimming.
+
+This branch exists only to execute the pull-request CI workflow against the complete V12 tree already staged on `main`.
