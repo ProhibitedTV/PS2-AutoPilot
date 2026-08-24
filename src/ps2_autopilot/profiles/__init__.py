@@ -20,6 +20,7 @@ from .jak_and_daxter_v18 import JakAndDaxterV18Profile
 from .jak_and_daxter_v19 import JakAndDaxterV19Profile
 from .jak_and_daxter_v20 import JakAndDaxterV20Profile
 from .jak_and_daxter_v21 import JakAndDaxterV21Profile
+from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from .madden2005_v4 import Madden2005V4Profile
 from .madden2005_v5 import Madden2005V5Profile
 from .madden2005_v6 import Madden2005V6Profile
@@ -42,7 +43,7 @@ from .madden2005_v21 import Madden2005V21Profile
 from .madden2005_v22 import Madden2005V22Profile
 from .madden2005_v23 import Madden2005V23Profile
 
-JakAndDaxterProfile = JakAndDaxterV21Profile
+JakAndDaxterProfile = JakAndDaxterV22Profile
 Madden2005Profile = Madden2005V23Profile
 
 from .registry import (  # noqa: E402
@@ -77,6 +78,7 @@ __all__ = [
     "JakAndDaxterV19Profile",
     "JakAndDaxterV20Profile",
     "JakAndDaxterV21Profile",
+    "JakAndDaxterV22Profile",
     "JakPhase",
     "Madden2005Profile",
     "Madden2005V4Profile",
