@@ -25,14 +25,18 @@ def summarize(path: Path) -> dict[str, Any]:
     actions: Counter[str] = Counter()
     stages: Counter[str] = Counter()
     policies: Counter[str] = Counter()
+    visual_goals: Counter[str] = Counter()
     samples = 0
     max_completion = 0
     max_cells = max_orbs = max_flies = None
     max_position_buckets = 0
     max_no_progress = 0.0
-    progress_events = replans = water_uturns = shore_hops = 0
+    progress_events = replans = executed_replans = water_uturns = shore_hops = 0
     local_stuck_triggers = local_stuck_successes = 0
     scout_attempts = roll_jump_attempts = spin_attacks = 0
+    goal_acquisitions = goal_pursuit_ticks = goal_scan_biases = 0
+    orb_goal_cues = cell_goal_cues = 0
+    ledge_attempts = ledge_double_attempts = ledge_successes = ledge_failures = 0
     first_ts = last_ts = None
 
     for row in _records(path):
@@ -47,6 +51,9 @@ def summarize(path: Path) -> dict[str, Any]:
         policy = row.get("jak_policy_version")
         if policy:
             policies[str(policy)] += 1
+        visual_goal = row.get("jak_visual_goal")
+        if visual_goal and visual_goal != "none":
+            visual_goals[str(visual_goal)] += 1
 
         def max_int(current: int | None, key: str) -> int | None:
             value = row.get(key)
@@ -66,6 +73,7 @@ def summarize(path: Path) -> dict[str, Any]:
         max_no_progress = max(max_no_progress, float(row.get("jak_goal_no_progress_age") or 0.0))
         progress_events = max(progress_events, int(row.get("jak_goal_progress_events") or 0))
         replans = max(replans, int(row.get("jak_goal_replans") or 0))
+        executed_replans = max(executed_replans, int(row.get("jak_executed_objective_replans") or 0))
         water_uturns = max(water_uturns, int(row.get("jak_water_uturns") or 0))
         shore_hops = max(shore_hops, int(row.get("jak_water_shore_hops") or 0))
         local_stuck_triggers = max(local_stuck_triggers, int(row.get("jak_local_stuck_triggers") or 0))
@@ -73,6 +81,17 @@ def summarize(path: Path) -> dict[str, Any]:
         scout_attempts = max(scout_attempts, int(row.get("jak_scout_dive_attempts") or 0))
         roll_jump_attempts = max(roll_jump_attempts, int(row.get("jak_roll_jump_attempts") or 0))
         spin_attacks = max(spin_attacks, int(row.get("jak_moving_spin_attacks") or 0))
+        goal_acquisitions = max(goal_acquisitions, int(row.get("jak_visual_goal_acquisitions") or 0))
+        goal_pursuit_ticks = max(goal_pursuit_ticks, int(row.get("jak_visual_goal_pursuit_ticks") or 0))
+        goal_scan_biases = max(goal_scan_biases, int(row.get("jak_goal_scan_biases") or 0))
+        orb_goal_cues = max(orb_goal_cues, int(row.get("jak_orb_goal_cues") or 0))
+        cell_goal_cues = max(cell_goal_cues, int(row.get("jak_cell_goal_cues") or 0))
+        ledge_attempts = max(ledge_attempts, int(row.get("jak_ledge_jump_attempts") or 0))
+        ledge_double_attempts = max(
+            ledge_double_attempts, int(row.get("jak_ledge_jump_double_attempts") or 0)
+        )
+        ledge_successes = max(ledge_successes, int(row.get("jak_ledge_jump_successes") or 0))
+        ledge_failures = max(ledge_failures, int(row.get("jak_ledge_jump_failures") or 0))
 
         ts = row.get("timestamp")
         if isinstance(ts, (int, float)):
@@ -86,14 +105,25 @@ def summarize(path: Path) -> dict[str, Any]:
         "duration_seconds": duration,
         "policy_samples": policies.most_common(),
         "objective_stage_samples": stages.most_common(),
+        "visual_goal_samples": visual_goals.most_common(),
         "max_completion_percent": max_completion,
         "max_geyser_cells": max_cells,
         "max_geyser_orbs": max_orbs,
         "max_geyser_scout_flies": max_flies,
         "objective_progress_events": progress_events,
         "objective_replans": replans,
+        "executed_objective_replans": executed_replans,
         "max_no_progress_seconds": round(max_no_progress, 2),
         "distinct_position_buckets": max_position_buckets,
+        "visual_goal_acquisitions": goal_acquisitions,
+        "visual_goal_pursuit_ticks": goal_pursuit_ticks,
+        "goal_scan_biases": goal_scan_biases,
+        "orb_goal_cues": orb_goal_cues,
+        "cell_goal_cues": cell_goal_cues,
+        "ledge_jump_attempts": ledge_attempts,
+        "ledge_double_jump_attempts": ledge_double_attempts,
+        "ledge_jump_successes": ledge_successes,
+        "ledge_jump_failures": ledge_failures,
         "water_uturns": water_uturns,
         "water_shore_hops": shore_hops,
         "local_stuck_triggers": local_stuck_triggers,
