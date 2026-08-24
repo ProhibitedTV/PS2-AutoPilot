@@ -26,6 +26,8 @@ jobs:
       - name: Test
         run: pytest -q
 
+  # This job validates Windows-only packaging/import boundaries. It intentionally
+  # does not create a ViGEm device, launch PCSX2, or substitute for live acceptance.
   windows-smoke:
     runs-on: windows-latest
     timeout-minutes: 10
