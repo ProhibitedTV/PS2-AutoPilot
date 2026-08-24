@@ -8,9 +8,6 @@ controller:
   backend: virtual_gamepad
   focus_window: true
 
-# V14 can consume PCSX2's read-only PINE side channel. Identity/status telemetry is
-# useful immediately. RAM fields remain empty until this exact PS2 build's addresses
-# are calibrated; the bridge will refuse configured RAM reads without an ID/CRC gate.
 semantic_telemetry:
   enabled: true
   host: "127.0.0.1"
@@ -23,17 +20,7 @@ semantic_telemetry:
   expected_game_ids: []
   expected_crcs: []
   fields: {}
-  # Once the exact build is verified, populate expected_game_ids or expected_crcs and
-  # calibrated read-only fields such as:
-  # jak_x: {address: "0x00000000", type: f32}
-  # jak_y: {address: "0x00000000", type: f32}
-  # jak_z: {address: "0x00000000", type: f32}
-  # power_cells: {address: "0x00000000", type: u32}
-  # precursor_orbs: {address: "0x00000000", type: u32}
-  # scout_flies: {address: "0x00000000", type: u32}
 
-# Jak recovery stays conservative. V9+ handles short local stalls inside proven
-# gameplay; the global watchdog remains the slow last-resort recovery ladder.
 watchdog:
   motion_threshold: 0.006
   stuck_seconds: 25
@@ -72,25 +59,19 @@ observability:
 
 profile:
   name: jak_and_daxter
-
-  # V14 layers a Geyser Rock curriculum/objective planner and optional semantic state
-  # over V13's land-first perception, V12 swimming, V11 ownership and V10 skills.
   mode: production
   template_threshold: 0.84
   random_seed: 2001
   production_random_seed: 2001
 
-  # Geyser Rock is now a concrete tutorial benchmark rather than generic exploration.
-  # These baselines are correct for a fresh New Game. Change them when intentionally
-  # attaching V14 to a later save or a curriculum savestate.
+  # Tutorial curriculum remains the first benchmark, but V16 no longer lets the
+  # sequential plan hide legitimate rewards or keep Jak pinned to one false target.
   geyser_baseline_power_cells: 0
   geyser_baseline_orbs: 0
   geyser_baseline_scout_flies: 0
   objective_replan_seconds: 45
   objective_replan_scan_seconds: 7
   position_bucket_size: 3.0
-  # Coordinate waypoints become useful as soon as PINE Jak XYZ is calibrated. Leave
-  # this empty until then; V14 still plans from progress + vision without it.
   geyser_waypoints: []
 
   ocr_enabled: true
@@ -104,24 +85,16 @@ profile:
   main_menu_retry_seconds: 3.0
   new_game_green_ratio_threshold: 0.04
   new_game_green_margin: 0.012
-
-  # V4 real-capture main-menu fallback. V8+ restricts visual-only use to pre-gameplay
-  # boot states; after gameplay has been established, a real menu needs OCR evidence.
   main_menu_ocr_quorum: 3
   main_menu_visual_green_threshold: 0.12
   main_menu_visual_competing_max: 0.035
   main_menu_visual_margin: 0.08
   main_menu_visual_stable_motion: 0.02
 
-  # First-run Jak save creation defaults to NO. Strong OCR must establish a non-
-  # destructive save/create/overwrite prompt before this transaction is allowed.
   save_choice_green_threshold: 0.06
   save_choice_green_margin: 0.04
   save_prompt_select_settle_seconds: 0.30
   save_prompt_retry_seconds: 4.0
-
-  # V5/V6 save-file selector. OCR remains the preferred evidence path. If OCR misses
-  # the stylized title/EMPTY text, V6 accepts only the stable real-menu geometry.
   save_file_retry_seconds: 4.0
   save_selector_visual_stable_motion: 0.008
   save_selector_visual_title_white: 0.16
@@ -147,11 +120,9 @@ profile:
   production_burst_max_seconds: 1.45
   production_jump_probability: 0.18
   double_jump_probability: 0.65
-
   safe_forward_scale: 0.82
   safe_jump_scale: 0.55
 
-  # Broad blue ratios remain useful as a steering cue after confirmed water entry.
   water_hue_min: 85
   water_hue_max: 140
   water_sat_min: 45
@@ -177,8 +148,6 @@ profile:
   water_direction_reconsider_seconds: 1.75
   water_direction_flip_margin: 0.10
 
-  # V13: controller ownership requires bright/coherent surface water reaching the
-  # bottom foreground. Dark blue cliffs and distant ocean should stay land-owned.
   water_surface_hue_min: 88
   water_surface_hue_max: 118
   water_surface_sat_min: 80
@@ -187,7 +156,6 @@ profile:
   water_surface_bottom_min: 0.16
   water_surface_candidate_min: 0.055
 
-  # V12 closed-loop water navigation.
   water_progress_epsilon: 0.025
   water_progress_timeout: 5.0
   water_stall_motion_max: 0.0045
@@ -210,7 +178,6 @@ profile:
   water_backtrack_v12_seconds: 1.25
   water_backtrack_v12_speed: 0.76
 
-  # V11 adaptive camera-response ownership.
   attach_probe_after_seconds: 4.0
   attach_probe_idle_seconds: 0.8
   attach_probe_baseline_max: 0.020
@@ -236,8 +203,6 @@ profile:
   post_reacquire_turn: 0.60
   post_reacquire_camera: 0.32
 
-  # Fast local obstacle/contact recovery from V9. V12 disarms it while coherent water
-  # owns navigation because animated water can mask zero translation.
   local_stuck_motion_threshold: 0.0035
   local_stuck_trigger_seconds: 2.2
   local_stuck_command_warmup_seconds: 0.55
@@ -255,8 +220,6 @@ profile:
   local_stuck_cooldown_seconds: 1.4
   local_stuck_route_memory_seconds: 5.5
 
-  # V10 Scout Fly cue + V13 temporal confirmation/cooldown. V14 only allows this cue
-  # to control movement while the explicit SCOUT_FLIES objective is active.
   scout_red_sat_min: 90
   scout_red_value_min: 55
   scout_gray_value_min: 85
@@ -273,8 +236,6 @@ profile:
   scout_stability_x: 0.18
   scout_stability_area_fraction: 0.55
 
-  # V10 Blue Eco cue + V13 temporal confirmation. V14 only allows it while the
-  # BLUE_ECO_DOOR objective is active.
   blue_eco_hue_min: 88
   blue_eco_hue_max: 118
   blue_eco_sat_min: 95
@@ -291,7 +252,6 @@ profile:
   cue_refresh_seconds: 0.16
   cue_turn_gain: 0.90
 
-  # V13 deliberate camera scan replaces blind random anti-loop selection.
   land_scan_camera: 0.42
   land_scan_sweep_seconds: 0.42
   land_scan_commit_seconds: 0.85
@@ -300,8 +260,6 @@ profile:
   land_scan_cooldown_seconds: 4.5
   land_scan_water_penalty: 1.25
 
-  # V10 action vocabulary. Spin is low-risk while moving; roll-jumps only happen on
-  # stable, dry, mostly straight travel and remain subordinate to recovery layers.
   spin_attack_min_seconds: 1.6
   spin_attack_max_seconds: 3.2
   roll_jump_min_seconds: 5.0
@@ -312,12 +270,70 @@ profile:
   roll_jump_roll_seconds: 0.14
   roll_jump_air_seconds: 0.48
 
-  # R2 remains the visual fallback progress channel until exact PINE fields are known.
+  # V15 reward attraction and ledge traversal.
+  goal_refresh_seconds: 0.12
+  goal_lock_seconds: 1.10
+  goal_stable_frames_required: 2
+  goal_min_score: 0.72
+  goal_pursuit_forward: 0.64
+  goal_turn_gain: 1.02
+  goal_camera_gain: 0.18
+  goal_scan_salience_weight: 0.85
+  goal_high_jump_y: 0.50
+  goal_jump_center_x: 0.42
+  goal_jump_cooldown_seconds: 1.35
+  goal_route_commit_seconds: 11.0
+  goal_replan_min_gap_seconds: 16.0
+  ledge_edge_threshold: 44
+  ledge_row_min: 0.13
+  ledge_confidence_min: 0.46
+  ledge_stable_frames_required: 2
+  ledge_stability_y: 0.10
+  ledge_jump_forward: 0.76
+  ledge_jump_turn: 0.30
+  ledge_first_air_seconds: 0.22
+  ledge_second_air_seconds: 0.44
+  ledge_settle_seconds: 0.34
+  ledge_double_confidence: 0.68
+  ledge_jump_cooldown_seconds: 1.55
+  ledge_success_motion: 0.009
+
+  # V16 target validation: pursue rewards, but stop worshipping lamps/walls forever.
+  target_static_seconds: 1.8
+  target_stall_motion_max: 0.0045
+  target_progress_x: 0.07
+  target_progress_y: 0.05
+  target_progress_area_fraction: 0.22
+  target_blacklist_seconds: 18.0
+  target_max_resolution_attempts: 4
+  target_jump_seconds: 0.34
+  target_bypass_seconds: 0.95
+  target_bypass_turn: 0.66
+  target_bypass_forward: 0.46
+
+  # V16 proactive platforming/contact recovery. A small ledge should get a hop and
+  # double-jump attempt in ~1 second, not a 25-second global watchdog timeout.
+  mobility_stall_motion_max: 0.0042
+  mobility_stall_seconds: 1.15
+  mobility_jump_forward: 0.72
+  mobility_stage_seconds: 0.32
+  mobility_bypass_seconds: 0.80
+  mobility_success_motion: 0.010
+
+  # V16 shoreline prevention is separate from confirmed-water ownership. It steers
+  # away from foreground ocean before entry and continues inland after an exit.
+  shoreline_guard_bottom_fraction: 0.24
+  shoreline_guard_total: 0.11
+  shoreline_guard_center: 0.15
+  shoreline_guard_side_delta: 0.08
+  shoreline_guard_turn: 0.64
+  shoreline_guard_forward: 0.30
+  shore_exit_commit_seconds: 8.0
+
   progress_probe_initial_delay_seconds: 20
   progress_probe_seconds: 60
   progress_probe_hold_seconds: 1.25
 
-  # Legacy explore-mode tuning is retained for explicit calibration runs.
   menu_action_seconds: 1.4
   death_action_seconds: 1.5
   explore_burst_min_seconds: 0.8
