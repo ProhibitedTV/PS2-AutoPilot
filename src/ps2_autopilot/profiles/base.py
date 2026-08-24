@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -16,6 +17,7 @@ class ProfileContext:
     template: TemplateMatch | None
     now: float
     previous_frame: np.ndarray | None = None
+    semantic: dict[str, Any] = field(default_factory=dict)
 
 
 class GameProfile(ABC):
