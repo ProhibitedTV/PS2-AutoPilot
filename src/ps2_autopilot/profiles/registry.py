@@ -5,7 +5,7 @@ from typing import Callable
 
 from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
-from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
+from .jak_and_daxter_v22_world import JakAndDaxterV22Profile
 from .madden2005_v23 import Madden2005V23Profile
 
 
