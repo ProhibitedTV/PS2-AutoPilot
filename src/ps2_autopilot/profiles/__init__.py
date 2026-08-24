@@ -3,6 +3,16 @@ from .jak_and_daxter import JakAndDaxterProfile as JakAndDaxterV1Profile, JakPha
 from .jak_and_daxter_v2 import JakAndDaxterV2Profile
 from .jak_and_daxter_v3 import JakAndDaxterV3Profile
 from .jak_and_daxter_v4 import JakAndDaxterV4Profile
+from .jak_and_daxter_v5 import JakAndDaxterV5Profile
+from .jak_and_daxter_v6 import JakAndDaxterV6Profile
+from .jak_and_daxter_v7 import JakAndDaxterV7Profile
+from .jak_and_daxter_v8 import JakAndDaxterV8Profile
+from .jak_and_daxter_v9 import JakAndDaxterV9Profile
+from .jak_and_daxter_v10 import JakAndDaxterV10Profile
+from .jak_and_daxter_v11 import JakAndDaxterV11Profile
+from .jak_and_daxter_v12 import JakAndDaxterV12Profile
+from .jak_and_daxter_v13 import JakAndDaxterV13Profile
+from .jak_and_daxter_v14 import JakAndDaxterV14Profile
 from .madden2005_v4 import Madden2005V4Profile
 from .madden2005_v5 import Madden2005V5Profile
 from .madden2005_v6 import Madden2005V6Profile
@@ -24,7 +34,7 @@ from .madden2005_v20 import Madden2005V20Profile
 from .madden2005_v21 import Madden2005V21Profile
 from .madden2005_v22 import Madden2005V22Profile
 
-JakAndDaxterProfile = JakAndDaxterV4Profile
+JakAndDaxterProfile = JakAndDaxterV14Profile
 Madden2005Profile = Madden2005V22Profile
 
 from .registry import (  # noqa: E402
@@ -42,6 +52,16 @@ __all__ = [
     "JakAndDaxterV2Profile",
     "JakAndDaxterV3Profile",
     "JakAndDaxterV4Profile",
+    "JakAndDaxterV5Profile",
+    "JakAndDaxterV6Profile",
+    "JakAndDaxterV7Profile",
+    "JakAndDaxterV8Profile",
+    "JakAndDaxterV9Profile",
+    "JakAndDaxterV10Profile",
+    "JakAndDaxterV11Profile",
+    "JakAndDaxterV12Profile",
+    "JakAndDaxterV13Profile",
+    "JakAndDaxterV14Profile",
     "JakPhase",
     "Madden2005Profile",
     "Madden2005V4Profile",
