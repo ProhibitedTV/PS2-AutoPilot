@@ -99,6 +99,17 @@ class MaddenOCR:
         self.submitted_frames = 0
         self.dropped_frames = 0
 
+        # Async ownership metrics. 1080p capture is larger than the OCR model needs;
+        # keep enough evidence to prove that the queued snapshot is materially smaller
+        # without putting the full capture on the worker queue first.
+        self.submit_downscales = 0
+        self.last_submit_source_width = 0
+        self.last_submit_source_height = 0
+        self.last_submit_source_bytes = 0
+        self.last_submit_owned_width = 0
+        self.last_submit_owned_height = 0
+        self.last_submit_owned_bytes = 0
+
     @property
     def available(self) -> bool:
         self._ensure_engine()
@@ -130,6 +141,12 @@ class MaddenOCR:
             completed_at = self._last_result_completed_at
         age = self.result_age_seconds(now)
         completion_age = None if completed_at <= -1e8 else max(0.0, now - completed_at)
+        reduction = 0.0
+        if self.last_submit_source_bytes > 0:
+            reduction = max(
+                0.0,
+                1.0 - self.last_submit_owned_bytes / self.last_submit_source_bytes,
+            ) * 100.0
         return {
             "ocr_async_enabled": self.async_enabled,
             "ocr_inflight": inflight,
@@ -140,6 +157,14 @@ class MaddenOCR:
             ),
             "ocr_submitted_frames": submitted,
             "ocr_dropped_frames": dropped,
+            "ocr_submit_downscales": self.submit_downscales,
+            "ocr_submit_source_width": self.last_submit_source_width or None,
+            "ocr_submit_source_height": self.last_submit_source_height or None,
+            "ocr_submit_source_bytes": self.last_submit_source_bytes or None,
+            "ocr_submit_owned_width": self.last_submit_owned_width or None,
+            "ocr_submit_owned_height": self.last_submit_owned_height or None,
+            "ocr_submit_owned_bytes": self.last_submit_owned_bytes or None,
+            "ocr_submit_copy_reduction_pct": round(reduction, 1),
         }
 
     def _ensure_engine(self) -> None:
@@ -277,10 +302,41 @@ class MaddenOCR:
                 self._inflight = False
                 self._condition.notify_all()
 
+    def _own_submit_frame(self, frame: np.ndarray) -> np.ndarray:
+        """Own the smallest full-view frame the async OCR worker can use safely.
+
+        The capture buffer cannot be retained because the next capture may reuse it.
+        For 1080p and other frames wider than ``max_width``, ``cv2.resize`` both creates
+        independent storage and performs the downscale the worker would otherwise do
+        later. That replaces a full-resolution ``frame.copy()`` with a substantially
+        smaller owned frame while preserving every part of the screen for menu OCR.
+        """
+        h, w = frame.shape[:2]
+        self.last_submit_source_width = int(w)
+        self.last_submit_source_height = int(h)
+        self.last_submit_source_bytes = int(frame.nbytes)
+
+        if w > self.max_width:
+            scale = self.max_width / max(w, 1)
+            owned = cv2.resize(
+                frame,
+                (self.max_width, max(1, int(round(h * scale)))),
+                interpolation=cv2.INTER_AREA,
+            )
+            self.submit_downscales += 1
+        else:
+            # Smaller/native-resolution frames still need independent ownership.
+            owned = frame.copy()
+
+        oh, ow = owned.shape[:2]
+        self.last_submit_owned_width = int(ow)
+        self.last_submit_owned_height = int(oh)
+        self.last_submit_owned_bytes = int(owned.nbytes)
+        return owned
+
     def _submit_latest(self, frame: np.ndarray, now: float) -> None:
         self._start_worker()
-        # Copy once at the low OCR cadence so capture buffers can be reused safely.
-        owned = frame.copy()
+        owned = self._own_submit_frame(frame)
         with self._condition:
             if self._pending_frame is not None:
                 self.dropped_frames += 1
