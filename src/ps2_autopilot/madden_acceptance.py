@@ -172,7 +172,13 @@ def evaluate_soak(
     min_games_completed = max(1, int(min_games_completed))
     max_unresolved_pct = max(0.0, float(max_unresolved_pct))
     report = build_report(roots)
-    aggregate = dict(report.get("aggregate", {}))
+
+    # `soak_report.build_report()` deliberately exposes its cross-session aggregate
+    # as `overall`. Treat a missing/invalid block as a schema error rather than
+    # silently turning all metrics into zero and producing a misleading failure.
+    overall = report.get("overall")
+    report_schema_valid = isinstance(overall, dict)
+    aggregate = dict(overall) if report_schema_valid else {}
     duration = float(aggregate.get("duration_seconds", 0.0) or 0.0)
     hours = duration / 3600.0
     games = int(aggregate.get("games_completed", 0) or 0)
@@ -191,7 +197,8 @@ def evaluate_soak(
             final_unresolved.append({"root": str(root), "reason": reason})
 
     passed = bool(
-        sessions
+        report_schema_valid
+        and sessions
         and hours >= min_hours
         and games >= min_games_completed
         and unresolved_pct <= max_unresolved_pct
@@ -200,10 +207,12 @@ def evaluate_soak(
     return _criterion(
         passed,
         (
-            f"duration={hours:.2f}h/{min_hours:.2f}h games={games}/{min_games_completed} "
+            f"schema_valid={report_schema_valid} duration={hours:.2f}h/{min_hours:.2f}h "
+            f"games={games}/{min_games_completed} "
             f"unresolved={unresolved_pct:.3f}%<={max_unresolved_pct:.3f}% "
             f"final_unresolved={len(final_unresolved)}"
         ),
+        report_schema_valid=report_schema_valid,
         minimum_hours=min_hours,
         duration_hours=round(hours, 4),
         minimum_games_completed=min_games_completed,
