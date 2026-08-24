@@ -9,6 +9,7 @@ from .capture import FrameGrabber
 from .config import AppConfig
 from .controllers.keyboard import KeyboardController
 from .controllers.virtual_gamepad import VirtualGamepadController
+from .loop_health import RollingLoopHealth
 from .observability import RuntimeObserver, TracingController
 from .overlay import OverlayServer
 from .pine import PineTelemetryBridge
@@ -53,6 +54,9 @@ class AutopilotApp:
         cv2.setNumThreads(self.opencv_threads)
         self._last_loop_ms = 0.0
         self._loop_overruns = 0
+        self.loop_health = RollingLoopHealth(
+            int(performance_cfg.get("rolling_window_cycles", 120))
+        )
 
         self.window = PCSX2Window(config.window_title_contains)
         self.grabber = FrameGrabber(self.window)
@@ -143,6 +147,7 @@ class AutopilotApp:
 
     def run(self) -> None:
         period = 1.0 / max(self.config.loop_hz, 1.0)
+        budget_ms = period * 1000.0
         previous = None
         current_frame = None
         previous_for_ctx = None
@@ -188,6 +193,7 @@ class AutopilotApp:
                 template = self.detector.best_match(current_frame)
                 status = self.watchdog.update(motion)
                 semantic = self.semantic_bridge.poll(started)
+                performance = self.loop_health.snapshot(budget_ms).as_dict()
                 ctx = ProfileContext(
                     frame=current_frame,
                     motion=motion,
@@ -195,6 +201,7 @@ class AutopilotApp:
                     now=started,
                     previous_frame=previous_for_ctx,
                     semantic=semantic,
+                    performance=performance,
                 )
 
                 policy_started = time.perf_counter()
@@ -230,9 +237,10 @@ class AutopilotApp:
                     "capture_ms": round(capture_ms, 2),
                     "policy_ms": round(policy_ms, 2),
                     "last_loop_ms": round(self._last_loop_ms, 2),
-                    "loop_budget_ms": round(period * 1000.0, 2),
+                    "loop_budget_ms": round(budget_ms, 2),
                     "loop_overruns": self._loop_overruns,
                     "opencv_threads": self.opencv_threads,
+                    **performance,
                     **semantic,
                 }
                 telemetry = getattr(self.profile, "telemetry", None)
@@ -265,7 +273,13 @@ class AutopilotApp:
                 self._last_loop_ms = elapsed * 1000.0
                 if elapsed > period:
                     self._loop_overruns += 1
-                else:
+                self.loop_health.record(
+                    capture_ms=capture_ms,
+                    policy_ms=policy_ms,
+                    loop_ms=self._last_loop_ms,
+                    budget_ms=budget_ms,
+                )
+                if elapsed <= period:
                     time.sleep(period - elapsed)
         except KeyboardInterrupt:
             print("Stopping...")
