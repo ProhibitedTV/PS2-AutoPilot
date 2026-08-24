@@ -36,6 +36,7 @@ class JakAndDaxterV20Profile(JakAndDaxterV19Profile):
         self.v20_pressure = "warming"
         self.v20_load_shed_ticks = 0
         self.v20_reflex_perception_skips = 0
+        self.v20_menu_preemptions = 0
 
         self.semantic_last_position: tuple[float, float, float] | None = None
         self.semantic_translation_delta = 0.0
@@ -110,9 +111,57 @@ class JakAndDaxterV20Profile(JakAndDaxterV19Profile):
         self.semantic_position_last_at = ctx.now
         self.semantic_position_age = 0.0
 
+    def _abort_locomotion_for_menu(self) -> None:
+        """Cancel transient gameplay owners before a save menu gets controller input."""
+
+        for attr in (
+            "navigation_commit_active",
+            "land_scan_active",
+            "target_resolution_active",
+            "mobility_active",
+            "ledge_jump_active",
+            "skill_active",
+            "water_escape_active",
+        ):
+            if hasattr(self, attr):
+                setattr(self, attr, False)
+        if hasattr(self, "navigation_commit_stage"):
+            self.navigation_commit_stage = "idle"
+        if hasattr(self, "land_scan_stage"):
+            self.land_scan_stage = "idle"
+        if hasattr(self, "second_jump_pending"):
+            self.second_jump_pending = False
+
+    def _save_menu_preflight(self, controller, ctx: ProfileContext) -> str | None:
+        """Give save transactions exclusive input ownership before gameplay policy runs.
+
+        Older save handlers wrapped ``super().tick()`` and corrected the returned action
+        afterward. Once gameplay-session ownership became sticky, that was too late:
+        navigation/ledge code could already have sent sticks or buttons on the same tick.
+        Refresh the narrow boot/save detector first and service only the verified menu.
+        """
+
+        if self.mode != "production":
+            return None
+        self._read_ocr_title_gate(ctx)
+
+        # Strong semantic YES/NO prompts win over the weaker slot-selector fallback.
+        if getattr(self, "save_prompt_visible", False):
+            self._abort_locomotion_for_menu()
+            self.v20_menu_preemptions += 1
+            return self._save_prompt_gate(controller, ctx)
+        if getattr(self, "save_file_selector_visible", False):
+            self._abort_locomotion_for_menu()
+            self.v20_menu_preemptions += 1
+            return self._save_file_selector_gate(controller, ctx)
+        return None
+
     def tick(self, controller, ctx: ProfileContext) -> str:
         self._apply_runtime_budget(ctx)
         self._update_semantic_translation(ctx)
+        menu_action = self._save_menu_preflight(controller, ctx)
+        if menu_action is not None:
+            return menu_action
         return super().tick(controller, ctx)
 
     def telemetry(self, ctx: ProfileContext) -> dict:
@@ -124,6 +173,7 @@ class JakAndDaxterV20Profile(JakAndDaxterV19Profile):
                 "jak_runtime_pressure_factor": round(self.v20_pressure_factor, 2),
                 "jak_load_shed_ticks": self.v20_load_shed_ticks,
                 "jak_reflex_perception_skips": self.v20_reflex_perception_skips,
+                "jak_menu_preemptions_v20": self.v20_menu_preemptions,
                 "jak_goal_refresh_seconds_v20": round(self.goal_refresh_seconds, 3),
                 "jak_cue_refresh_seconds_v20": round(self.cue_refresh_seconds, 3),
                 "jak_ledge_refresh_seconds_v20": round(self.ledge_refresh_seconds, 3),

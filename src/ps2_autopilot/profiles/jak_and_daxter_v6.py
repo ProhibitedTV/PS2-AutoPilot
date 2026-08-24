@@ -125,6 +125,18 @@ class JakAndDaxterV6Profile(JakAndDaxterV5Profile):
 
     def _read_ocr_title_gate(self, ctx: ProfileContext) -> bool:
         parent_visible = super()._read_ocr_title_gate(ctx)
+
+        # A semantic title/main-menu/save prompt is stronger evidence than V6's
+        # geometry-only selector fallback. Live PCSX2 2.6.3 exposed the failure mode:
+        # the OVERWRITE YES/NO screen happened to satisfy the old four-row text
+        # geometry and was repeatedly reclassified as the slot selector. Never let a
+        # weak visual fallback erase an already-verified parent transaction.
+        if self.save_prompt_visible or self.main_menu_visible or self.title_gate_visible:
+            self.save_file_selector_visible = False
+            self.save_file_empty_count = 0
+            self.save_file_selector_source = "suppressed-by-stronger-menu"
+            return True
+
         if self.save_file_selector_visible:
             self.save_file_selector_source = "ocr"
             return True
