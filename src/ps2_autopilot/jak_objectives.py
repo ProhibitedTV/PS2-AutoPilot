@@ -146,11 +146,10 @@ class PlannerSnapshot:
 class GeyserRockPlanner:
     """Small deterministic tutorial curriculum and sparse route-memory layer.
 
-    This does not pretend we already know the PS2 build's coordinates. It can work
-    from OCR progress today, consume read-only PINE counts/position when configured,
-    and automatically gains meaningful world-node routing once calibrated waypoints
-    are added to YAML. High-level planning is therefore useful before memory hunting
-    is complete rather than blocked on reverse engineering.
+    It can work from OCR progress today, consume read-only PINE counts/position when
+    configured, and automatically gains meaningful world-node routing once calibrated
+    waypoints are added to YAML. High-level planning is useful before reverse
+    engineering is complete instead of being blocked on exact PS2 addresses.
     """
 
     def __init__(self, cfg: dict[str, Any] | None = None) -> None:
@@ -159,7 +158,17 @@ class GeyserRockPlanner:
         self.position_bucket_size = max(0.5, float(cfg.get("position_bucket_size", 3.0)))
         self.graph = SparseWorldGraph.from_config(cfg.get("geyser_waypoints", []))
 
-        self.baseline = JakProgression()
+        def optional_int(name: str) -> int | None:
+            value = cfg.get(name)
+            return None if value is None else int(value)
+
+        # Fresh tutorial runs are normally 0/0/0, but the baseline is configurable so
+        # an existing save or a future savestate curriculum can anchor deltas correctly.
+        self.baseline = JakProgression(
+            power_cells=optional_int("geyser_baseline_power_cells"),
+            precursor_orbs=optional_int("geyser_baseline_orbs"),
+            scout_flies=optional_int("geyser_baseline_scout_flies"),
+        )
         self.last_counts = JakProgression()
         self.last_progress_at: float | None = None
         self.stage_started_at: float | None = None
@@ -192,7 +201,7 @@ class GeyserRockPlanner:
         return None
 
     @staticmethod
-    def _position(semantic: dict[str, Any]) -> tuple[float, float, float] | None:
+    def position(semantic: dict[str, Any]) -> tuple[float, float, float] | None:
         candidates = (
             ("jak_x", "jak_y", "jak_z"),
             ("player_x", "player_y", "player_z"),
@@ -240,7 +249,6 @@ class GeyserRockPlanner:
         )
 
     def _stage_for(self, cells: int | None, flies: int | None, semantic: dict[str, Any]) -> GeyserObjective:
-        # An explicit calibrated semantic task flag wins when available.
         if bool(semantic.get("geyser_complete")):
             return GeyserObjective.COMPLETE
         if cells is not None and cells >= 4:
@@ -288,7 +296,7 @@ class GeyserRockPlanner:
             self.last_progress_at = now
             self.stage_changes += 1
 
-        position = self._position(semantic)
+        position = self.position(semantic)
         if position is not None:
             size = self.position_bucket_size
             bucket = ":".join(str(int(math.floor(v / size))) for v in position)
