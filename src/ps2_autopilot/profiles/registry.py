@@ -42,7 +42,10 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         name="madden2005",
         display_name="Madden NFL 2005",
         template_namespace="madden2005",
-        maturity="soak-tested",
+        # V23 earned a seven-game unattended lifecycle soak. V24 changes active
+        # special-teams ownership/possession semantics and therefore must re-earn
+        # soak-tested status rather than inheriting the predecessor's evidence.
+        maturity="production-candidate",
         factory=_madden_factory,
     ),
     "jak_and_daxter": ProfileSpec(
