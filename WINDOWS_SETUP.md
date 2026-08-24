@@ -19,18 +19,30 @@ The bootstrap script:
    - virtual Xbox controller support
    - local RapidOCR semantic vision
 
-After it succeeds:
+After it succeeds, validate configuration before starting the emulator:
 
 ```bat
 .venv\Scripts\activate.bat
+ps2-autopilot-doctor --config config\madden2005.yaml --config-only
+```
+
+`--config-only` does not require Windows capture, PCSX2, OCR, PINE, or a controller device. It validates the registered profile, controller backend, supervisor settings, and—when emulator relaunch is enabled—the configured PCSX2 working directory and executable/PATH resolution. This is the preferred first check after editing unattended-supervisor settings.
+
+Then start PCSX2 and run the full live doctor:
+
+```bat
 ps2-autopilot-doctor --config config\madden2005.yaml
 ```
+
+The full doctor verifies the render window, frame capture, runtime controller dependency, and game-specific live prerequisites.
 
 Then:
 
 ```bat
 ps2-autopilot --config config\madden2005.yaml
 ```
+
+For supervised 24/7 operation, use `run24x7.cmd` / `ps2-autopilot-supervisor` after the relevant local emulator command is configured. See `SUPERVISOR.md`; machine-specific PCSX2 and game-image paths stay local and are not committed.
 
 ## Existing clone
 
@@ -40,6 +52,12 @@ After a repo update, rerun bootstrap so newly-added dependencies are installed:
 git pull
 bootstrap.cmd
 .venv\Scripts\activate.bat
+```
+
+Run the static preflight again after changing profile, controller, or supervisor configuration:
+
+```bat
+ps2-autopilot-doctor --config config\madden2005.yaml --config-only
 ```
 
 ## Manual install
