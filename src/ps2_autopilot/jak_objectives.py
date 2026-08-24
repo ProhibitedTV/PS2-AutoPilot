@@ -162,8 +162,6 @@ class GeyserRockPlanner:
             value = cfg.get(name)
             return None if value is None else int(value)
 
-        # Fresh tutorial runs are normally 0/0/0, but the baseline is configurable so
-        # an existing save or a future savestate curriculum can anchor deltas correctly.
         self.baseline = JakProgression(
             power_cells=optional_int("geyser_baseline_power_cells"),
             precursor_orbs=optional_int("geyser_baseline_orbs"),
@@ -304,8 +302,10 @@ class GeyserRockPlanner:
             self.position_buckets.add(bucket)
         self.current_node, self.current_node_distance = self.graph.nearest(position)
 
-        objective_age = max(0.0, now - (self.stage_started_at or now))
-        no_progress_age = max(0.0, now - (self.last_progress_at or now))
+        stage_started = now if self.stage_started_at is None else self.stage_started_at
+        last_progress = now if self.last_progress_at is None else self.last_progress_at
+        objective_age = max(0.0, now - stage_started)
+        no_progress_age = max(0.0, now - last_progress)
         replan_due = no_progress_age >= self.replan_seconds
         if replan_due and not self.snapshot.replan_due:
             self.replans += 1
