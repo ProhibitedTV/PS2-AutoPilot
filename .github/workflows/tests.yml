@@ -25,3 +25,34 @@ jobs:
         run: ruff check src tests
       - name: Test
         run: pytest -q
+
+  # Hosted Windows can prove package markers, imports, compilation, and command
+  # registration. Do not install/create ViGEm here: vgamepad's source installer can
+  # launch MSI/driver setup and is not a deterministic hosted-runner dependency.
+  # The target-machine doctor remains responsible for real virtual-pad availability.
+  windows-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install Windows runtime
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Compile
+        shell: pwsh
+        run: python -m compileall -q src
+      - name: Import Windows runtime dependencies
+        shell: pwsh
+        run: python -c "import win32gui, pydirectinput; import ps2_autopilot.window; import ps2_autopilot.controllers.virtual_gamepad"
+      - name: Verify virtual-gamepad extra remains declared
+        shell: pwsh
+        run: python -c "import tomllib, pathlib; p=tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8')); deps=p['project']['optional-dependencies']['virtual-gamepad']; assert any(str(x).lower().startswith('vgamepad') for x in deps), deps"
+      - name: Smoke registry and console contracts
+        shell: pwsh
+        run: pytest -q tests/test_profile_registry.py tests/test_console_entrypoints.py
