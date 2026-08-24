@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from .config import load_config
-from .supervisor import AutopilotSupervisor
+from .supervisor_escalation import EscalatingAutopilotSupervisor
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -24,7 +24,7 @@ def main() -> None:
     project_root = Path.cwd()
     config_path = Path(args.config)
     cfg = load_config(config_path)
-    supervisor = AutopilotSupervisor(config_path, cfg, project_root)
+    supervisor = EscalatingAutopilotSupervisor(config_path, cfg, project_root)
     raise SystemExit(supervisor.run())
 
 

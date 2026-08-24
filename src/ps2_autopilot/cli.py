@@ -4,8 +4,8 @@ import argparse
 from pathlib import Path
 
 from .ort_preload import PRELOAD as _ORT_PRELOAD  # noqa: F401
-from .app import AutopilotApp
 from .config import load_config
+from .managed_app import ManagedAutopilotApp
 from .profiles.registry import list_profile_specs
 
 
@@ -32,7 +32,7 @@ def main() -> None:
         return
     project_root = Path.cwd()
     cfg = load_config(args.config)
-    AutopilotApp(cfg, project_root).run()
+    ManagedAutopilotApp(cfg, project_root).run()
 
 
 if __name__ == "__main__":
