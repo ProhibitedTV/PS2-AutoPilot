@@ -5,7 +5,9 @@ from enum import IntEnum
 import socket
 import struct
 import time
-from typing import Any
+from typing import Any, Iterable
+
+from .jak1_semantic import Jak1GoalResolver, Jak1SemanticError
 
 
 class PineError(RuntimeError):
@@ -26,15 +28,16 @@ class PineCommand(IntEnum):
 
 
 _STATUS_NAMES = {0: "running", 1: "paused", 2: "shutdown"}
+PINE_MAX_READS_PER_REQUEST = 40000
 
 
 class PineClient:
-    """Tiny read-only PCSX2 PINE client.
+    """Read-only PCSX2 PINE client with batched guest-memory reads.
 
     PINE frames are little-endian: request = u32 total_size + command payload;
-    response = u32 total_size + u8 status + command results. This client deliberately
-    implements only reads and identity/status commands. There are no write or savestate
-    methods, so callers cannot accidentally turn semantic telemetry into a cheat path.
+    response = u32 total_size + u8 status + command results. This class deliberately
+    implements only reads and identity/status commands. There are no write, patch,
+    savestate, or execution methods.
     """
 
     def __init__(self, host: str = "127.0.0.1", port: int = 28011, timeout: float = 0.05) -> None:
@@ -58,7 +61,11 @@ class PineClient:
             sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
             sock.settimeout(self.timeout)
         except OSError as exc:
-            raise PineError(f"PINE connect failed: {exc}") from exc
+            raise PineError(
+                f"PINE connect failed at {self.host}:{self.port}: {exc}. "
+                "Run `ps2-autopilot-pine doctor` (or `ps2-autopilot-pine enable`) "
+                "and restart PCSX2 if PINE is disabled."
+            ) from exc
         self._sock = sock
         return sock
 
@@ -75,6 +82,8 @@ class PineClient:
         return b"".join(parts)
 
     def _request(self, payload: bytes) -> bytes:
+        if not payload:
+            raise PineError("PINE request cannot be empty")
         packet = struct.pack("<I", len(payload) + 4) + payload
         try:
             sock = self._connect()
@@ -112,6 +121,40 @@ class PineClient:
 
     def read_f32(self, address: int) -> float:
         return float(struct.unpack("<f", struct.pack("<I", self.read32(address)))[0])
+
+    def read32_many(self, addresses: Iterable[int]) -> list[int]:
+        """Read many arbitrary u32 addresses with batched PINE commands.
+
+        The retail GOAL symbol resolver needs to inspect thousands of small words.
+        One socket round trip per word would make that impractical; PINE supports
+        multiple commands in one frame, so chunks remain both read-only and fast.
+        """
+
+        values = [int(address) for address in addresses]
+        if not values:
+            return []
+        if any(address < 0 or address > 0xFFFFFFFF for address in values):
+            raise PineError("PINE guest addresses must fit in 32 bits")
+        output: list[int] = []
+        for start in range(0, len(values), PINE_MAX_READS_PER_REQUEST):
+            chunk = values[start : start + PINE_MAX_READS_PER_REQUEST]
+            payload = b"".join(
+                bytes((int(PineCommand.READ32),)) + struct.pack("<I", address)
+                for address in chunk
+            )
+            data = self._request(payload)
+            expected = len(chunk) * 4
+            if len(data) != expected:
+                raise PineError(
+                    f"short batched PINE READ32 reply: got {len(data)}, expected {expected}"
+                )
+            output.extend(struct.unpack(f"<{len(chunk)}I", data))
+        return output
+
+    def read32_range(self, start: int, count: int, stride: int = 4) -> list[int]:
+        if count < 0 or stride <= 0:
+            raise PineError("invalid PINE range count/stride")
+        return self.read32_many(start + i * stride for i in range(count))
 
     def _string(self, command: PineCommand) -> str:
         data = self._request(bytes((int(command),)))
@@ -177,7 +220,13 @@ class PineSnapshot:
 
 
 class PineTelemetryBridge:
-    """Optional, identity-gated, read-only semantic telemetry poller."""
+    """Optional, identity-gated, read-only semantic telemetry poller.
+
+    `fields` remains available for explicit build-specific addresses, but Jak 1 can now
+    use a stronger path: discover the original GOAL symbol table, resolve *target* and
+    *game-info* by name, validate their runtime type tags, then decode a small documented
+    schema. That removes the former manual absolute-address/pointer-chain dependency.
+    """
 
     def __init__(self, cfg: dict[str, Any] | None = None) -> None:
         cfg = dict(cfg or {})
@@ -185,10 +234,15 @@ class PineTelemetryBridge:
         self.interval = max(0.05, float(cfg.get("interval_seconds", 0.25)))
         self.identity_interval = max(1.0, float(cfg.get("identity_interval_seconds", 5.0)))
         self.retry_interval = max(0.5, float(cfg.get("retry_interval_seconds", 2.0)))
-        self.expected_ids = {str(v).strip().upper() for v in cfg.get("expected_game_ids", []) if str(v).strip()}
-        self.expected_crcs = {str(v).strip().lower() for v in cfg.get("expected_crcs", []) if str(v).strip()}
+        self.expected_ids = {
+            str(v).strip().upper() for v in cfg.get("expected_game_ids", []) if str(v).strip()
+        }
+        self.expected_crcs = {
+            str(v).strip().lower() for v in cfg.get("expected_crcs", []) if str(v).strip()
+        }
         self.expected_title_contains = str(cfg.get("expected_title_contains", "")).strip().lower()
         self.fields_cfg = dict(cfg.get("fields", {}))
+        self.auto_jak1_symbols = bool(cfg.get("auto_jak1_symbols", False))
         self.client = PineClient(
             str(cfg.get("host", "127.0.0.1")),
             int(cfg.get("port", 28011)),
@@ -198,15 +252,17 @@ class PineTelemetryBridge:
         self._next_poll_at = 0.0
         self._next_identity_at = 0.0
         self._next_retry_at = 0.0
+        self._jak1_resolver: Jak1GoalResolver | None = None
+        self._resolver_identity: tuple[str | None, str | None] | None = None
 
     def close(self) -> None:
         self.client.close()
 
     def _identity_verified(self) -> bool:
         s = self.snapshot
-        # Arbitrary memory addresses are build-specific. When semantic fields are
-        # configured, require a stable ID or CRC gate rather than trusting title text
-        # alone. With no fields, title-only verification remains useful diagnostics.
+        # Arbitrary configured RAM addresses remain strictly build-gated. The Jak 1
+        # GOAL resolver is different: it finds named objects structurally and validates
+        # runtime type tags, so it does not require a CRC-specific absolute layout.
         if self.fields_cfg and not (self.expected_ids or self.expected_crcs):
             return False
         gates = 0
@@ -223,6 +279,7 @@ class PineTelemetryBridge:
         return bool(gates > 0 and okay)
 
     def _refresh_identity(self, now: float) -> None:
+        old_identity = (self.snapshot.game_id, self.snapshot.game_crc)
         self.snapshot.emulator_version = self.client.version()
         self.snapshot.game_title = self.client.title()
         self.snapshot.game_id = self.client.game_id()
@@ -230,6 +287,10 @@ class PineTelemetryBridge:
         self.snapshot.game_version = self.client.game_version()
         self.snapshot.emulator_status = self.client.status()
         self.snapshot.verified = self._identity_verified()
+        new_identity = (self.snapshot.game_id, self.snapshot.game_crc)
+        if old_identity != new_identity:
+            self._jak1_resolver = None
+            self._resolver_identity = None
         self._next_identity_at = now + self.identity_interval
 
     def _read_field(self, spec: Any) -> Any:
@@ -256,6 +317,29 @@ class PineTelemetryBridge:
             raise PineError(f"unsupported semantic field type {kind!r}")
         return readers[kind](address)
 
+    def _jak1_fields(self) -> dict[str, Any]:
+        if not self.auto_jak1_symbols:
+            return {}
+        title = str(self.snapshot.game_title or "").lower()
+        if "jak" not in title or "daxter" not in title:
+            return {
+                "pine_schema_verified": False,
+                "pine_schema_error": "automatic Jak 1 schema skipped: title does not identify Jak and Daxter",
+            }
+        identity = (self.snapshot.game_id, self.snapshot.game_crc)
+        if self._jak1_resolver is None or self._resolver_identity != identity:
+            self._jak1_resolver = Jak1GoalResolver(self.client)
+            self._resolver_identity = identity
+        try:
+            fields = self._jak1_resolver.snapshot()
+        except Jak1SemanticError as exc:
+            return {
+                "pine_schema_verified": False,
+                "pine_schema_error": str(exc),
+                "pine_semantic_schema": "jak1-goal-symbols-v1",
+            }
+        return fields
+
     def poll(self, now: float | None = None) -> dict[str, Any]:
         now = time.monotonic() if now is None else float(now)
         if not self.enabled:
@@ -275,6 +359,12 @@ class PineTelemetryBridge:
             if self.snapshot.verified:
                 for name, spec in self.fields_cfg.items():
                     fields[str(name)] = self._read_field(spec)
+            auto_fields = self._jak1_fields()
+            fields.update(auto_fields)
+            if auto_fields.get("pine_schema_verified") is True:
+                # Structural GOAL symbol + type-tag + count sanity validation is the
+                # semantic trust gate for the portable Jak schema.
+                self.snapshot.verified = True
             self.snapshot.fields = fields
             self.snapshot.available = True
             self.snapshot.stale = False
