@@ -291,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
         required_fresh_boots=args.required_fresh_boots,
         minimum_soak_hours=args.minimum_soak_hours,
         minimum_soak_games=args.minimum_soak_games,
-        maximum_unresolved_pct=args.maximum_unRESOLVED_PCT,
+        maximum_unresolved_pct=args.maximum_unresolved_pct,
     )
     print(json.dumps(report, indent=2, sort_keys=True, default=str))
     return 0 if report["passed"] else 1
