@@ -36,6 +36,7 @@ ps2-autopilot-capture = "ps2_autopilot.capture_cli:main"
 ps2-autopilot-doctor = "ps2_autopilot.doctor:main"
 ps2-autopilot-log = "ps2_autopilot.runtime_cli:log_main"
 ps2-autopilot-report = "ps2_autopilot.runtime_cli:report_main"
+ps2-autopilot-soak-report = "ps2_autopilot.soak_report:main"
 ps2-autopilot-pine = "ps2_autopilot.pine_cli:main"
 ps2-autopilot-jak-report = "ps2_autopilot.jak_benchmark:main"
 
