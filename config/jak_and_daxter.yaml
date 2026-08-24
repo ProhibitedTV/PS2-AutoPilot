@@ -12,13 +12,15 @@ semantic_telemetry:
   enabled: true
   host: "127.0.0.1"
   port: 28011
-  timeout_seconds: 0.04
+  timeout_seconds: 0.50
   interval_seconds: 0.25
   identity_interval_seconds: 5.0
   retry_interval_seconds: 2.0
+  schema_retry_interval_seconds: 10.0
   expected_title_contains: "Jak and Daxter"
   expected_game_ids: []
   expected_crcs: []
+  auto_jak1_symbols: true
   fields: {}
 
 watchdog:
