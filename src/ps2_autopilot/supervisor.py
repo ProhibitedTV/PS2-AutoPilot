@@ -37,8 +37,8 @@ class EmulatorLaunchConfig:
         enabled = bool(data.get("enabled", False))
         command_raw = data.get("command", [])
         if isinstance(command_raw, str):
-            # A single shell string is intentionally rejected. Keeping argv explicit
-            # avoids quoting surprises and prevents the supervisor from needing shell=True.
+            # Deliberately reject shell strings. An argv list keeps quoting explicit and
+            # guarantees the supervisor never needs shell=True for emulator launch.
             command = ()
         else:
             try:
@@ -68,6 +68,7 @@ class SupervisorConfig:
     restart_delay_seconds: float = 5.0
     poll_seconds: float = 1.0
     window_loss_grace_seconds: float = 8.0
+    stable_run_seconds: float = 120.0
     emulator: EmulatorLaunchConfig = EmulatorLaunchConfig()
 
     @classmethod
@@ -81,6 +82,7 @@ class SupervisorConfig:
             window_loss_grace_seconds=max(
                 1.0, float(raw.get("window_loss_grace_seconds", 8.0))
             ),
+            stable_run_seconds=max(5.0, float(raw.get("stable_run_seconds", 120.0))),
             emulator=EmulatorLaunchConfig.from_raw(raw.get("emulator")),
         )
 
@@ -100,25 +102,41 @@ class ChildProcess(Protocol):
 class SupervisorTelemetry:
     """Atomic supervisor state plus an append-only event stream.
 
-    ``supervisor.json`` is consumed by the running AutoPilot so restart counts/reasons
-    become ordinary overlay/verbose telemetry. ``supervisor.jsonl`` remains useful when
-    AutoPilot itself is down and therefore cannot write its normal logs.
+    The state survives AutoPilot process restarts because the supervisor owns it.
+    ``runtime/supervisor.json`` is the current snapshot and ``supervisor.jsonl`` is
+    the event history. When AutoPilot is supervisor-managed, OverlayServer merges the
+    prefixed supervisor fields into its normal state payload as well.
     """
 
-    def __init__(self, root: Path, *, launch_enabled: bool) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        launch_enabled: bool,
+        terminate_existing_on_escalation: bool,
+    ) -> None:
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
         self.state_path = root / "supervisor.json"
         self.events_path = root / "supervisor.jsonl"
+        started = self._utc_now()
         self.state: dict[str, Any] = {
             "supervisor_status": "starting",
+            "supervisor_pid": os.getpid(),
+            "supervisor_started_at": started,
+            "supervisor_autopilot_starts": 0,
             "supervisor_autopilot_restarts": 0,
+            "supervisor_emulator_launch_attempts": 0,
             "supervisor_emulator_restarts": 0,
             "supervisor_consecutive_autopilot_failures": 0,
             "supervisor_emulator_launch_enabled": bool(launch_enabled),
+            "supervisor_emulator_terminate_opt_in": bool(
+                terminate_existing_on_escalation
+            ),
             "supervisor_emulator_pid": None,
+            "supervisor_autopilot_pid": None,
             "supervisor_last_restart_reason": "startup",
-            "supervisor_last_event_at": self._utc_now(),
+            "supervisor_last_event_at": started,
         }
         self.write()
 
@@ -172,6 +190,7 @@ class WindowProbe:
 class ChildOutcome:
     exit_code: int
     reason: str
+    runtime_seconds: float = 0.0
     window_lost: bool = False
     stop_requested: bool = False
 
@@ -179,11 +198,12 @@ class ChildOutcome:
 class AutopilotSupervisor:
     """Supervise AutoPilot and optionally escalate to a PCSX2 relaunch.
 
-    The emulator launch path is disabled by default and requires an explicit argv list.
-    AutoPilot can still be restarted indefinitely exactly as the historical batch loop
-    did. When emulator relaunch is enabled, missing render/process evidence can trigger
-    the configured launch command; repeated AutoPilot failures may escalate to a full
-    emulator restart only when the separate destructive termination opt-in is enabled.
+    The emulator launch path is disabled by default and requires an explicit argv
+    list. Ordinary AutoPilot crashes still receive the historical lightweight
+    process restart. Missing PCSX2 window/process evidence can escalate to the
+    configured emulator launch command when enabled. Repeated AutoPilot failures
+    may terminate and relaunch an existing emulator only when the separate
+    ``terminate_existing_on_escalation`` opt-in is also enabled.
     """
 
     def __init__(
@@ -206,7 +226,11 @@ class AutopilotSupervisor:
         self.runtime_root = project_root / "runtime"
         self.stop_path = self.runtime_root / "STOP24X7"
         self.telemetry = SupervisorTelemetry(
-            self.runtime_root, launch_enabled=self.cfg.emulator.enabled
+            self.runtime_root,
+            launch_enabled=self.cfg.emulator.enabled,
+            terminate_existing_on_escalation=(
+                self.cfg.emulator.terminate_existing_on_escalation
+            ),
         )
         self.child_factory = child_factory or self._spawn_autopilot
         self.probe = probe or WindowProbe(app_config.window_title_contains)
@@ -217,7 +241,12 @@ class AutopilotSupervisor:
         self._stopping = False
 
     def _spawn_autopilot(self, command: list[str]) -> ChildProcess:
-        return subprocess.Popen(command, cwd=str(self.project_root))
+        env = os.environ.copy()
+        env["PS2_AUTOPILOT_SUPERVISED"] = "1"
+        env["PS2_AUTOPILOT_SUPERVISOR_STATE"] = str(
+            (self.runtime_root / "supervisor.json").resolve()
+        )
+        return subprocess.Popen(command, cwd=str(self.project_root), env=env)
 
     def _spawn_emulator(self, command: tuple[str, ...], cwd: str | None) -> Any:
         launch_cwd = cwd
@@ -251,6 +280,12 @@ class AutopilotSupervisor:
     def _stop_requested(self) -> bool:
         return self._stopping or self.stop_path.exists()
 
+    def _consume_stop_marker(self) -> None:
+        try:
+            self.stop_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
     def _safe_stop_child(self, child: ChildProcess) -> None:
         if child.poll() is not None:
             return
@@ -283,15 +318,16 @@ class AutopilotSupervisor:
         if not emulator.enabled:
             self.telemetry.event("emulator-relaunch-skipped", reason)
             return False
-        count = self.telemetry.increment("supervisor_emulator_restarts")
+
+        attempt = self.telemetry.increment("supervisor_emulator_launch_attempts")
         self.telemetry.state["supervisor_status"] = "launching-emulator"
         self.telemetry.event(
             "emulator-launch",
             reason,
-            supervisor_emulator_restarts=count,
+            supervisor_emulator_launch_attempts=attempt,
         )
         try:
-            self.emulator_launcher(emulator.command, emulator.cwd)
+            launched = self.emulator_launcher(emulator.command, emulator.cwd)
         except Exception as exc:
             self.telemetry.state["supervisor_status"] = "emulator-launch-failed"
             self.telemetry.event(
@@ -301,34 +337,51 @@ class AutopilotSupervisor:
             )
             return False
 
+        launch_pid = getattr(launched, "pid", None)
         probe = self._wait_for_window(emulator.wait_seconds)
         if not probe.available:
             self.telemetry.state["supervisor_status"] = "emulator-window-timeout"
             self.telemetry.event(
                 "emulator-window-timeout",
                 reason,
+                supervisor_emulator_launch_pid=launch_pid,
                 supervisor_probe_error=probe.error,
             )
             return False
+
+        restarts = self.telemetry.increment("supervisor_emulator_restarts")
         self.telemetry.state["supervisor_status"] = "running"
         self.telemetry.state["supervisor_emulator_pid"] = probe.pid
         self.telemetry.event(
             "emulator-window-ready",
             reason,
+            supervisor_emulator_launch_pid=launch_pid,
             supervisor_emulator_pid=probe.pid,
+            supervisor_emulator_restarts=restarts,
         )
         return True
 
     def _monitor_child(self, child: ChildProcess) -> ChildOutcome:
+        started = self.monotonic()
         missing_since: float | None = None
         while True:
+            runtime = max(0.0, self.monotonic() - started)
             if self._stop_requested():
                 self._safe_stop_child(child)
-                return ChildOutcome(0, "operator-stop", stop_requested=True)
+                return ChildOutcome(
+                    0,
+                    "operator-stop",
+                    runtime_seconds=runtime,
+                    stop_requested=True,
+                )
 
             exit_code = child.poll()
             if exit_code is not None:
-                return ChildOutcome(int(exit_code), f"autopilot-exit:{int(exit_code)}")
+                return ChildOutcome(
+                    int(exit_code),
+                    f"autopilot-exit:{int(exit_code)}",
+                    runtime_seconds=runtime,
+                )
 
             probe = self.probe()
             if probe.available:
@@ -348,9 +401,38 @@ class AutopilotSupervisor:
                 elif now - missing_since >= self.cfg.window_loss_grace_seconds:
                     self._safe_stop_child(child)
                     return ChildOutcome(
-                        1, "pcsx2-window-lost", window_lost=True
+                        1,
+                        "pcsx2-window-lost",
+                        runtime_seconds=max(0.0, now - started),
+                        window_lost=True,
                     )
             self.sleep(self.cfg.poll_seconds)
+
+    def _record_autopilot_failure(self, outcome: ChildOutcome) -> tuple[int, int]:
+        previous_failures = int(
+            self.telemetry.state.get("supervisor_consecutive_autopilot_failures", 0)
+            or 0
+        )
+        if outcome.runtime_seconds >= self.cfg.stable_run_seconds and previous_failures:
+            self.telemetry.state["supervisor_consecutive_autopilot_failures"] = 0
+            self.telemetry.event(
+                "autopilot-stability-reset",
+                "stable-run-before-failure",
+                supervisor_stable_runtime_seconds=round(outcome.runtime_seconds, 3),
+            )
+
+        restarts = self.telemetry.increment("supervisor_autopilot_restarts")
+        failures = self.telemetry.increment("supervisor_consecutive_autopilot_failures")
+        self.telemetry.state["supervisor_status"] = "recovering"
+        self.telemetry.event(
+            "autopilot-exit",
+            outcome.reason,
+            supervisor_autopilot_restarts=restarts,
+            supervisor_consecutive_autopilot_failures=failures,
+            supervisor_autopilot_runtime_seconds=round(outcome.runtime_seconds, 3),
+            supervisor_pcsx2_window_lost=outcome.window_lost,
+        )
+        return restarts, failures
 
     def _maybe_escalate_emulator(self, outcome: ChildOutcome) -> None:
         emulator = self.cfg.emulator
@@ -383,6 +465,7 @@ class AutopilotSupervisor:
                 "emulator-terminate-failed",
                 "repeated-autopilot-failures",
                 supervisor_emulator_pid=probe.pid,
+                supervisor_escalation_failures=failures,
             )
             return
 
@@ -390,61 +473,75 @@ class AutopilotSupervisor:
             "emulator-terminated",
             "repeated-autopilot-failures",
             supervisor_emulator_pid=probe.pid,
+            supervisor_escalation_failures=failures,
         )
         self.sleep(min(3.0, self.cfg.restart_delay_seconds))
         if self._launch_emulator("repeated-autopilot-failures"):
             self.telemetry.state["supervisor_consecutive_autopilot_failures"] = 0
             self.telemetry.write()
 
-    def run(self) -> int:
-        self.telemetry.state["supervisor_status"] = "running"
-        self.telemetry.write()
-
-        # If explicit emulator relaunch is enabled, make startup self-contained too.
-        startup_probe = self.probe()
-        if self.cfg.emulator.enabled and not startup_probe.available:
-            self._launch_emulator("startup-window-missing")
-        elif startup_probe.available:
-            self.telemetry.state["supervisor_emulator_pid"] = startup_probe.pid
+    def _ensure_emulator_for_autopilot(self, reason: str) -> bool:
+        probe = self.probe()
+        if probe.available:
+            self.telemetry.state["supervisor_emulator_pid"] = probe.pid
             self.telemetry.write()
+            return True
+        if not self.cfg.emulator.enabled:
+            return True
+        return self._launch_emulator(reason)
+
+    def _autopilot_command(self) -> list[str]:
+        return [
+            sys.executable,
+            "-m",
+            "ps2_autopilot.cli",
+            "--config",
+            str(self.config_path),
+        ]
+
+    def run(self) -> int:
+        self.telemetry.state["supervisor_status"] = "starting"
+        self.telemetry.write()
 
         try:
             while not self._stop_requested():
-                command = [
-                    sys.executable,
-                    "-m",
-                    "ps2_autopilot.cli",
-                    "--config",
-                    str(self.config_path),
-                ]
+                if not self._ensure_emulator_for_autopilot("pre-autopilot-window-missing"):
+                    self.telemetry.state["supervisor_status"] = "waiting-for-emulator"
+                    self.telemetry.write()
+                    self.sleep(self.cfg.restart_delay_seconds)
+                    continue
+
                 self.telemetry.state["supervisor_status"] = "starting-autopilot"
                 self.telemetry.write()
-                child = self.child_factory(command)
+                child = self.child_factory(self._autopilot_command())
+                starts = self.telemetry.increment("supervisor_autopilot_starts")
+                restart_count = int(
+                    self.telemetry.state.get("supervisor_autopilot_restarts", 0) or 0
+                )
                 self.telemetry.state["supervisor_status"] = "running"
                 self.telemetry.event(
                     "autopilot-start",
-                    "initial" if self.telemetry.state["supervisor_autopilot_restarts"] == 0 else "restart",
+                    "initial" if starts == 1 else "restart",
                     supervisor_autopilot_pid=getattr(child, "pid", None),
+                    supervisor_autopilot_starts=starts,
+                    supervisor_autopilot_restarts=restart_count,
                 )
 
                 outcome = self._monitor_child(child)
                 if outcome.stop_requested or outcome.exit_code == 0:
                     self.telemetry.state["supervisor_status"] = "stopped"
-                    self.telemetry.event("supervisor-stop", outcome.reason)
+                    self.telemetry.event(
+                        "supervisor-stop",
+                        outcome.reason,
+                        supervisor_autopilot_runtime_seconds=round(
+                            outcome.runtime_seconds, 3
+                        ),
+                    )
+                    if self.stop_path.exists():
+                        self._consume_stop_marker()
                     return 0
 
-                restarts = self.telemetry.increment("supervisor_autopilot_restarts")
-                failures = self.telemetry.increment(
-                    "supervisor_consecutive_autopilot_failures"
-                )
-                self.telemetry.state["supervisor_status"] = "recovering"
-                self.telemetry.event(
-                    "autopilot-exit",
-                    outcome.reason,
-                    supervisor_autopilot_restarts=restarts,
-                    supervisor_consecutive_autopilot_failures=failures,
-                )
-
+                self._record_autopilot_failure(outcome)
                 self._maybe_escalate_emulator(outcome)
                 if self._stop_requested():
                     break
@@ -457,4 +554,5 @@ class AutopilotSupervisor:
 
         self.telemetry.state["supervisor_status"] = "stopped"
         self.telemetry.event("supervisor-stop", "stop-file")
+        self._consume_stop_marker()
         return 0
