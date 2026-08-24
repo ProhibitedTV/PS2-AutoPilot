@@ -2,7 +2,7 @@
 
 **Windows-first, multi-game PCSX2 automation for unattended gameplay and livestreaming.**
 
-PS2 AutoPilot captures the active PCSX2 render, interprets game-specific visual state, drives a virtual controller, records evidence for unattended failures, and publishes a lightweight state feed for OBS. Shared infrastructure handles capture, supervision, logging, retention, controller I/O, optional read-only emulator telemetry, and overlays; each game owns its own perception and policy stack.
+PS2 AutoPilot captures the active PCSX2 render, interprets game-specific visual state, drives a virtual controller, records evidence for unattended failures, and publishes a lightweight state feed for OBS. Shared infrastructure handles capture, supervision, logging, retention, controller I/O, optional read-only emulator telemetry, acceptance tooling, and overlays; each game owns its own perception and policy stack.
 
 > Current package release: **v0.9.1**
 
@@ -10,8 +10,8 @@ PS2 AutoPilot captures the active PCSX2 render, interprets game-specific visual 
 
 | Profile | Game | Current policy | Maturity |
 | --- | --- | --- | --- |
-| `madden2005` | Madden NFL 2005 | `Madden2005V23Profile` | soak-tested |
-| `jak_and_daxter` | Jak and Daxter: The Precursor Legacy | `JakAndDaxterV21Profile` | production-candidate |
+| `madden2005` | Madden NFL 2005 | `Madden2005V24Profile` | production-candidate |
+| `jak_and_daxter` | Jak and Daxter: The Precursor Legacy | `JakAndDaxterV22Profile` | production-candidate |
 | `generic_chaos` | Generic controller/capture smoke test | generic | diagnostic |
 
 Madden and Jak are deliberately isolated. Shared runtime plumbing is reused; football assumptions never leak into the platformer policy.
@@ -22,33 +22,36 @@ List the profiles available in your checkout:
 ps2-autopilot --list-profiles
 ```
 
-## What maturity means here
+Maturity applies to the **active registry-selected policy**, not the best result ever achieved by an older version. Madden V23 completed a seven-game unattended lifecycle soak; V24 changes special-teams ownership/possession semantics and therefore remains a production candidate until the active version repeats the required live acceptance.
 
-The project now has more evidence than “the bot can reach one game,” but the two integrations are at very different stages. The table below separates behavior observed in live PCSX2 runs from acceptance work that is still open.
+See `GAME_PROFILES.md` for the detailed maturity and validation boundaries.
+
+## Current evidence boundary
 
 | Capability | Madden NFL 2005 | Jak and Daxter |
 | --- | --- | --- |
 | PCSX2 capture/controller attachment | live-proven | live-proven, including modern PCSX2 Qt render-window attachment |
-| Boot / initial menu navigation | live-proven | live-proven through PRESS START and NEW GAME |
-| Save / modal handling | multiple real Madden save/profile modals handled conservatively | live-proven through slot/save/overwrite confirmation, including restart while parked on overwrite |
-| Reach normal gameplay autonomously | live-proven | live-proven through the opening presentation into Geyser Rock gameplay |
-| Repeated lifecycle / objective completion | a live unattended soak completed 7 games before exposing the EA SPORTS Bio modal; that modal now has a dedicated safe handler | not yet: Geyser Rock objective completion remains the active benchmark |
-| Long-run acceptance | substantial multi-game evidence exists, but final overnight/cold-restart acceptance remains open | 2-hour, 8-hour, and 5/5 Geyser graduation are not complete |
-| Emulator-process recovery | AutoPilot process supervision exists | AutoPilot process supervision exists |
-| Relaunch PCSX2 after emulator death | **not yet**; tracked separately | **not yet**; tracked separately |
+| Boot / initial menu navigation | live-proven | live-proven through PRESS START / NEW GAME / save flow |
+| Reach normal gameplay autonomously | live-proven | live-proven through opening presentation into Geyser Rock |
+| Repeated lifecycle / objective completion | V23 completed 7 games before exposing the EA SPORTS Bio modal; that modal now has a dedicated safe handler | Geyser Rock objective graduation remains open |
+| Supervisor AutoPilot restart | implemented and regression-tested | implemented and regression-tested |
+| PCSX2 launch/relaunch integration | implemented behind explicit local config + safety opt-ins; real process-death exhibition proof remains open | shared supervisor implementation available; live game-specific acceptance remains open |
+| Final long-run acceptance | repeated fresh boot, real PCSX2-death recovery, and clean overnight soak remain | semantic/contact validation, Geyser graduation, and long soaks remain |
 
-The Madden seven-game soak is evidence of a real multi-game lifecycle, not a claim that every overnight failure mode is solved. Likewise, Jak reaching gameplay is not equivalent to autonomously completing Geyser Rock.
+Implementation coverage is not treated as live evidence. The repo contains strict acceptance tools specifically so code presence cannot accidentally close a runtime criterion.
 
-## Design goals
+## Design rules
 
-PS2 AutoPilot is built around a few rules that matter more than raw button volume:
+PS2 AutoPilot prioritizes reliable unattended behavior over raw button volume:
 
-- **Fail closed on unknown screens.** An unrecognized menu or dialog should produce evidence, not random confirms.
-- **Preserve presentation.** Replays, celebrations, cutscenes and story sequences are stream content and should not be skipped just because they are temporarily non-interactive.
-- **Use game-specific semantics.** Madden needs possession, play clocks and menu transactions; Jak needs continuous locomotion, route memory, hazards and platforming skills.
-- **Treat recovery as evidence-driven.** The runtime keeps screenshots, decisions and inputs around failures so a bad unattended state can become a regression test.
-- **Learn from consequences where useful.** Jak V21 persists low-sample route danger/reward/escape experience across restarts instead of forgetting every failed excursion.
-- **Stay broadcast-friendly.** Public overlays expose useful game state while deeper forensic telemetry remains available separately.
+- **Fail closed on unknown screens.** An unrecognized menu/dialog should produce evidence, not random confirms.
+- **Preserve presentation.** Replays, celebrations, cutscenes and story sequences are stream content.
+- **Use game-specific semantics.** Madden needs possession/play clocks/menu transactions; Jak needs continuous locomotion/routes/hazards/platforming.
+- **Separate policy from recovery ownership.** Game-local recovery, app savestate recovery, and supervisor process recovery have explicit boundaries.
+- **Treat recovery as evidence.** Screens, state, decisions and inputs around failures are retained for regression work.
+- **Keep semantic telemetry read-only.** PINE-derived state may inform decisions but does not write emulator memory.
+- **Learn consequences where low-sample learning is useful.** Jak persists route danger/reward/escape outcomes across AutoPilot restarts.
+- **Do not fake acceptance.** Fresh boots, process-death tests, long soaks and objective graduation require retained evidence.
 
 ## Architecture
 
@@ -71,7 +74,7 @@ PCSX2 render ------------> | frame capture         |
                               registered game profile
                          +-------------+-------------+
                          |                           |
-                    Madden V23                   Jak V21
+                    Madden V24                   Jak V22
                  football state/policy      platformer state/policy
                          |                           |
                          +-------------+-------------+
@@ -83,14 +86,22 @@ PCSX2 render ------------> | frame capture         |
                                      PCSX2
 
 state + inputs + frames ---> observability / failure bundles / OBS overlay
+                                       |
+                                       v
+                         soak + game acceptance tools
+
+Python supervisor ----------> AutoPilot process restart
+        |
+        +-------------------> optional PCSX2 launch/relaunch
+                              (explicit local config + safety opt-ins)
 ```
 
 ## Requirements
 
-- Windows 10 or 11
+- Windows 10 or 11 for the production runtime
 - PCSX2 with your own legally obtained game dump
-- Python **3.11 or 3.12** recommended for the full local OCR stack
-- a virtual Xbox 360 controller through `vgamepad` / ViGEm for the normal Windows setup
+- 64-bit Python **3.11 or newer**; Python 3.11/3.12 remains the recommended full Madden OCR path
+- virtual Xbox 360 controller through `vgamepad` / ViGEm for the normal setup
 
 PCSX2 controller port 1 should map the virtual pad like this:
 
@@ -113,35 +124,43 @@ Fresh checkout:
 bootstrap.cmd
 ```
 
-Existing checkout after pulling a new release:
+Existing checkout after pulling changes:
 
 ```bat
 git pull --ff-only
+bootstrap.cmd
 .venv\Scripts\activate.bat
+```
+
+Manual editable install with the full runtime:
+
+```bat
 python -m pip install -e ".[full]"
 ```
 
-Check the installed package version:
+The project intentionally keeps machine-local PCSX2/game-image paths out of source control.
+
+## Validate configuration and runtime
+
+Static validation can run **before PCSX2 starts**:
 
 ```bat
-python -c "from importlib.metadata import version; print(version('ps2-autopilot'))"
+ps2-autopilot-doctor --config config\madden2005.yaml --config-only
+ps2-autopilot-doctor --config config\jak_and_daxter.yaml --config-only
 ```
 
-## Validate the runtime
+Static preflight checks the registered profile, controller backend, supervisor configuration, and—when emulator relaunch is enabled—the configured launcher working directory and executable/PATH resolution.
 
-For Madden:
+After PCSX2 is running, use the full live doctor:
 
 ```bat
 ps2-autopilot-doctor --config config\madden2005.yaml
-```
-
-For Jak and Daxter:
-
-```bat
 ps2-autopilot-doctor --config config\jak_and_daxter.yaml
 ```
 
-The doctor checks the Windows runtime, PCSX2 window discovery/capture, controller backend, template namespace and local OCR dependencies relevant to the selected profile.
+The full doctor adds Windows runtime, render-window discovery, frame capture, controller dependency and game-specific live probes.
+
+See `WINDOWS_SETUP.md` for setup details.
 
 ## Run a game
 
@@ -153,7 +172,7 @@ Interactive:
 ps2-autopilot --config config\madden2005.yaml
 ```
 
-Supervised wrapper:
+Supervised:
 
 ```bat
 run24x7.cmd config\madden2005.yaml
@@ -173,15 +192,58 @@ Dedicated supervised wrapper:
 run-jak24x7.cmd
 ```
 
-`Ctrl+C` is an intentional clean shutdown. The wrapper restarts AutoPilot after an unexpected nonzero AutoPilot exit; it does **not** yet relaunch a dead PCSX2 process.
+`Ctrl+C` and `runtime/STOP24X7` are intentional clean stops.
 
-## Jak and Daxter production status
+The Python supervisor always owns AutoPilot process restart. PCSX2 launch/relaunch is disabled by default; when enabled it requires an explicit argv list. Repeated-failure termination of an existing PCSX2 process is a **separate opt-in**. See `SUPERVISOR.md` and `RECOVERY_LADDER.md`.
 
-Jak is the second real-game integration and intentionally looks very different from Madden.
+## Madden NFL 2005 status
 
-### Live-proven lifecycle
+Madden has the strongest multi-game evidence in the repository, but the active V24 policy is deliberately marked production-candidate until its own live gates pass.
 
-The current boot path has been exercised in real PCSX2 sessions:
+The inherited lifecycle includes:
+
+- title/demo and main-menu recognition
+- verified PLAY NOW navigation instead of blind confirmation
+- bounded randomized team/home-away rotation
+- controller-side selection
+- conservative save/profile modal handling
+- offense/defense role inference and play-clock-aware pre-snap behavior
+- spatial player/ball/open-space hypotheses with confidence-gated policy use
+- broadcast-preserving replays, celebrations, quarter breaks and post-play presentation
+- verified END GAME -> main menu -> next exhibition lifecycle
+- persistent session/unknown/failure evidence
+- semantic -> hard -> savestate -> supervisor PCSX2 recovery ownership
+
+V24 additionally makes special teams explicit:
+
+- kickoff, kick return, punt, punt return, field goal and extra-point intent
+- kicking-side vs returning-side controller ownership
+- return contexts never execute the kick-meter macro
+- kick/punt returns become offense with a bounded run-only return policy
+- kickoffs/punts become defensive coverage
+- ambiguous scoring-kick live transitions drop invented possession confidence
+
+The broader “special teams are reliable” criterion stays open until real footage validates recognition and timing.
+
+### Madden final lifecycle gate
+
+Issue #3 is intentionally down to three live criteria:
+
+1. repeated fresh-boot team/controller/settings selection
+2. real PCSX2 process death followed by automatic exhibition-loop recovery
+3. clean overnight soak with bounded evidence and no unresolved dead-air state
+
+Evaluate retained evidence with:
+
+```bat
+ps2-autopilot-madden-acceptance --help
+```
+
+The evaluator requires explicit fresh-boot/process-death assertions and consumes the shared versioned runtime-evidence contract.
+
+## Jak and Daxter status
+
+Jak is a separate third-person platformer stack. Real PCSX2 sessions have exercised:
 
 ```text
 PRESS START
@@ -192,65 +254,52 @@ PRESS START
    -> GEYSER ROCK GAMEPLAY
 ```
 
-The save-file selector is no longer the calibration frontier. The current stack owns save/slot/overwrite menus before locomotion and can recover when AutoPilot is restarted while already sitting on the overwrite confirmation. Unknown destructive save actions still fail closed.
+Current V22 behavior includes:
 
-### Current V21 behavior
-
-- OCR/visual verified PRESS START and NEW GAME transactions
-- save-slot and overwrite-confirmation ownership that preempts gameplay input
-- hands-off opening/story presentation behavior
 - continuous on-foot analog locomotion and camera steering
-- water/shoreline recovery with guards against uniform sky/lighting blue and side-only false water
-- target validation, blacklisting, atomic relocation commits and stagnation recovery
-- dedicated safe control modes for Zoomer, Flut Flut, cannon and primitive fishing behavior
-- objective/progression telemetry for Geyser Rock
-- optional **read-only** PCSX2 PINE bridge that self-resolves the Jak 1 GOAL symbol table and runtime schema on the validated retail build
-- semantic position is accepted for learning only after it demonstrates plausible movement; static/bad coordinate samples are not trusted blindly
-- persistent V21 consequence memory in `state/jak_experience.json`: water/death/respawn/stall outcomes penalize recent routes, verified progress rewards them, and successful escape directions are remembered across AutoPilot restarts
+- hands-off unknown/story presentation behavior
+- save/slot/overwrite ownership that preempts gameplay input
+- water/shoreline recovery and persistent water-route danger learning
+- target validation, blacklisting, route consequence memory and anti-loop behavior
+- atomic hop-step/jump/double-jump/roll-jump/dive/platform-chain transactions
+- explicit ALIGN / COMMIT / AIRBORNE-or-ATTACK / VERIFY phases with bounded retry/timeouts
+- optional read-only PINE semantics with identity/schema verification
+- self-resolving Jak 1 GOAL position/velocity/progression schema rather than invented absolute addresses
+- source-derived contact probing with fail-closed validation
+- objective/progression telemetry and Geyser Rock acceptance tooling
 
-### What is not yet proven
+Jak remains a production candidate because Geyser Rock has not yet graduated autonomously from fresh boots and the long-soak gates remain open.
 
-Jak is still a **production-candidate**, not a completed autonomous playthrough system. The current Geyser Rock benchmark remains open:
+Useful commands:
 
-- obtain all four Geyser Rock Power Cells
-- free all seven Scout Flies
-- complete the Blue Eco door transaction
-- complete the cliff/platform sequence
-- return through the warp gate
-- complete the sequence without human controller intervention
-- ultimately pass the fresh-boot graduation target repeatedly
+```bat
+ps2-autopilot-jak-report runtime\verbose.jsonl
+ps2-autopilot-jak-semantic-check --help
+ps2-autopilot-jak-contact --help
+ps2-autopilot-jak-curriculum --help
+ps2-autopilot-jak-captures --help
+ps2-autopilot-jak-acceptance --help
+ps2-autopilot-jak-validation --help
+```
 
-Dynamic semantic coordinates and collectible counters also remain subject to end-to-end live validation before they are treated as authoritative for every navigation decision.
-
-See [`JAK_PRODUCTION.md`](JAK_PRODUCTION.md) and [`GAME_PROFILES.md`](GAME_PROFILES.md) for the detailed boundaries.
-
-## Madden NFL 2005 status
-
-Madden remains the most mature integration. Its V23 stack includes deterministic menu navigation, bounded team/matchup variety, offense/defense role inference, game-situation OCR, spatial player/ball hypotheses, deliberate passing/running/defense behavior, confidence-gated defensive contact cadence, replay/presentation preservation, postgame lifecycle handling and unattended supervision.
-
-A prior unattended run completed **7 games / 7 completed** before getting stuck on the distinct EA SPORTS Bio missing-profile modal. V22 added a dedicated visually verified CANCEL transaction for that modal, and V23 further reduces low-information defensive button spam. This is meaningful multi-game validation, while full overnight/cold-emulator-restart acceptance remains open.
-
-The versioned Madden modules remain in the repository so later improvements do not erase prior working behavior.
+See `JAK_PRODUCTION.md` and issue #66 for the Geyser Rock validation/graduation sequence.
 
 ## Runtime evidence and debugging
 
-Runtime artifacts are written under the gitignored `runtime/` directory. Depending on the active profile and event type you may see:
+Runtime artifacts live under gitignored `runtime/` paths. Depending on the active game/event:
 
 ```text
 runtime/
   state.json
+  supervisor.json
+  supervisor.jsonl
   session.json
   events.jsonl
   input.jsonl
   verbose.jsonl
   spatial.jsonl
+  unknown/
   failures/
-    <timestamp>/
-      frame.png
-      frame-before.png
-      state.json
-      recent-events.json
-      recent-inputs.json
 ```
 
 Useful live views:
@@ -268,25 +317,21 @@ Single-session summary:
 ps2-autopilot-report
 ```
 
-Automated one- or multi-session soak acceptance:
+One- or multi-session soak report:
 
 ```bat
 ps2-autopilot-soak-report runtime
 ```
 
-Example acceptance gate:
+Example thresholded report:
 
 ```bat
 ps2-autopilot-soak-report runtime --min-games-completed 2 --max-unresolved-pct 10 --max-unknown-captures 0
 ```
 
-Jak-specific objective/runtime report:
+Failure bundles are self-contained: triggering frame, prior frame, semantic state, and recent decision/input history travel together. Runtime retention bounds old evidence so unattended sessions cannot grow storage indefinitely.
 
-```bat
-ps2-autopilot-jak-report runtime\verbose.jsonl
-```
-
-Failure bundles are intentionally self-contained: the triggering frame, prior frame, current semantic state and recent decision/input window travel together. Runtime retention caps old bundles and captures so unattended operation cannot grow the folder without bound.
+Acceptance consumers use `runtime_evidence.py` as the public compatibility boundary for retained-log discovery, unresolved-state semantics and soak-report schema validation. Schema drift fails loudly rather than silently becoming zero metrics.
 
 ## OBS overlay
 
@@ -296,7 +341,7 @@ The built-in state server defaults to:
 http://127.0.0.1:8765/
 ```
 
-The active config chooses the game-specific overlay. Debug-only fields can be viewed with:
+Debug fields:
 
 ```text
 http://127.0.0.1:8765/?debug=1
@@ -304,7 +349,7 @@ http://127.0.0.1:8765/?debug=1
 
 ## Calibration workflow
 
-Templates are useful for stable visual states while OCR and CV provide semantic context. Captured game imagery is gitignored and should not be committed.
+Captured game imagery is gitignored and should not be committed by default.
 
 Example Jak captures:
 
@@ -325,34 +370,36 @@ ps2-autopilot-capture --config config\madden2005.yaml --label game_over --series
 ## Repository map
 
 ```text
-config/                       game/runtime configuration
-overlay/                      OBS browser-source front ends
-profiles/<game>/templates/    local calibration templates (game imagery ignored)
-state/                        persistent learned local state (gitignored)
+config/                         game/runtime configuration
+overlay/                        OBS browser-source front ends
+profiles/<game>/templates/      local calibration templates (game imagery ignored)
+state/                          persistent learned local state (gitignored)
 src/ps2_autopilot/
-  app.py                      shared runtime loop
-  observability.py            events, inputs and failure evidence
-  soak_report.py              multi-session unattended acceptance report
-  pine.py / jak1_semantic.py  optional read-only semantic bridge
-  jak_experience.py           persistent Jak consequence memory
-  runtime_retention.py        bounded runtime storage
-  profiles/registry.py        game registry
-  profiles/madden2005_v*.py   versioned Madden policies
-  profiles/jak_and_daxter*.py versioned Jak policies
+  app.py                        shared runtime loop
+  supervisor.py                 AutoPilot + optional PCSX2 recovery ownership
+  config_preflight.py           static profile/controller/supervisor validation
+  observability.py              events, inputs and failure evidence
+  soak_report.py                multi-session unattended metrics
+  runtime_evidence.py           public retained-evidence compatibility boundary
+  madden_acceptance.py          final Madden lifecycle evidence gate
+  pine.py / jak1_semantic.py    optional read-only semantic bridge
+  jak_experience.py             persistent Jak consequence memory
+  runtime_retention.py          bounded runtime storage
+  profiles/registry.py          active game registry + maturity
+  profiles/madden2005_v*.py     versioned Madden policies
+  profiles/jak_and_daxter*.py   versioned Jak policies
 ```
 
-## Roadmap
+## Near-term roadmap
 
-Near-term work is evidence-driven:
+The remaining work is intentionally evidence-driven rather than version-number-driven:
 
-1. validate Jak semantic position/progression fields during real controllable movement and collection events
-2. turn validated Jak position buckets and learned outcomes into a sparse Geyser Rock route graph
-3. build explicit ALIGN / COMMIT / AIRBORNE / VERIFY platforming skill controllers
-4. graduate Geyser Rock autonomously before expanding into the open world
-5. complete Jak 2-hour, 8-hour and repeated fresh-boot acceptance
-6. add the final supervisor escalation that can relaunch PCSX2 after emulator process death
-7. continue Madden overnight/cold-restart hardening and spatial calibration without regressing its proven multi-game lifecycle
-8. add additional PS2 games as independent registered profiles
+1. validate Jak XYZ/velocity/contact/progression semantics end-to-end on the active PCSX2 build
+2. populate real Geyser Rock graph/curriculum evidence and graduate the V22 skill engine through the V23 benchmark
+3. complete Jak 2-hour / 8-hour and repeated fresh-boot graduation runs
+4. run Madden V24 repeated-fresh-boot, real PCSX2-death, and clean overnight acceptance
+5. calibrate Madden spatial player/ball/team grouping, receiver choice, defensive timing, and V24 special teams from retained real footage
+6. expand to additional PS2 games only as independent registered profiles with their own acceptance boundaries
 
 ## Legal / repository hygiene
 
