@@ -1,14 +1,14 @@
 # Game Profiles
 
-PS2 AutoPilot is a multi-game PCSX2 runtime. Game-specific behavior lives behind a registered profile; the capture, controller, supervision, retention, logging, and overlay plumbing stay shared.
+PS2 AutoPilot is a multi-game PCSX2 runtime. Game-specific behavior lives behind a registered profile; capture, controller, supervision, retention, logging, optional semantic telemetry, and overlay plumbing stay shared.
 
 ## Registered games
 
-| Profile | Game | Maturity | Config |
-| --- | --- | --- | --- |
-| `madden2005` | Madden NFL 2005 | soak-tested | `config/madden2005.yaml` |
-| `jak_and_daxter` | Jak and Daxter: The Precursor Legacy | production-candidate | `config/jak_and_daxter.yaml` |
-| `generic_chaos` | Generic smoke test | diagnostic | custom |
+| Profile | Game | Current policy | Maturity | Config |
+| --- | --- | --- | --- | --- |
+| `madden2005` | Madden NFL 2005 | `Madden2005V23Profile` | soak-tested | `config/madden2005.yaml` |
+| `jak_and_daxter` | Jak and Daxter: The Precursor Legacy | `JakAndDaxterV21Profile` | production-candidate | `config/jak_and_daxter.yaml` |
+| `generic_chaos` | Generic smoke test | generic | diagnostic | custom |
 
 List the registry at any time:
 
@@ -16,7 +16,7 @@ List the registry at any time:
 ps2-autopilot --list-profiles
 ```
 
-The Madden implementation remains versioned and intact. `madden2005` continues to resolve to V22; Jak V3 does not reuse or rewrite its football state machine.
+The Madden and Jak implementations remain independently versioned. `madden2005` resolves to V23 and `jak_and_daxter` resolves to V21; neither policy imports the other game's state machine.
 
 ## Run one game
 
@@ -38,19 +38,52 @@ Equivalent explicit command:
 run24x7.cmd config\jak_and_daxter.yaml
 ```
 
-The runner clears the previous runtime session once when manually launched, then preserves current-session crash evidence across supervised restarts.
+The runner clears the previous runtime session once when manually launched, then preserves current-session crash evidence across supervised AutoPilot restarts. It does not yet relaunch PCSX2 itself after emulator process death.
 
-## Jak V3 production candidate
+## Validation boundaries
 
-V1 established a fail-closed game-specific profile. V2 added verified boot navigation for `PRESS START` and the green-highlighted `NEW GAME` item. V3 adds the continuous runtime needed by the actual game while retaining those safety boundaries.
+### Madden NFL 2005
 
-The default config now uses `mode: production`. Production mode has distinct on-foot, A-Grav Zoomer, Flut Flut, cannon and fishing control modes; analog movement/camera policies; short-term visual exploration memory; periodic L2/R2 progress-HUD probes; Power Cell/Orb/Scout Fly telemetry; and gameplay-only stuck recovery.
+Madden is the soak-tested profile. Live evidence has gone beyond a single successful game: an unattended soak completed seven games before exposing an EA SPORTS Bio missing-profile modal. The later V22 handler owns that distinct modal and only confirms when CANCEL is visually verified. V23 additionally prevents low-confidence defensive spatial reads from producing random tackle/strip/play-ball/rush actions; uncertain defense pursues and sprints until contact is justified.
 
-Unknown menus and story presentation remain hands-off. The original game asks the player to choose a save file after `NEW GAME`, so the first real save-file selector is intentionally still a calibration gate rather than a blind Cross. See `JAK_PRODUCTION.md` for the researched control model, safety boundaries and soak criteria.
+That evidence demonstrates a functioning multi-game lifecycle, but it is not the same as final overnight/cold-restart acceptance. PCSX2 process relaunch and the broad overnight lifecycle gate remain separate open work.
 
-## Calibration workflow
+### Jak and Daxter
 
-The production profile still supports `mode: observe` for capture sessions. Representative templates should use names that carry both phase and special-mode evidence, for example:
+Jak V21 has crossed the old save-file calibration boundary. Real PCSX2 sessions have exercised:
+
+```text
+PRESS START
+ -> NEW GAME
+ -> save/slot flow
+ -> overwrite confirmation when applicable
+ -> opening presentation
+ -> Geyser Rock gameplay
+```
+
+The current profile includes continuous analog navigation, water/shoreline recovery, target/route validation, atomic relocation, optional read-only PINE semantics, and persistent online consequence memory. The PINE bridge can resolve the Jak 1 GOAL runtime schema on the validated retail build, but position/progression values are still subject to end-to-end live validation before every navigation layer may trust them. V21 therefore refuses XYZ learning until coordinates demonstrate plausible movement.
+
+Jak remains a production-candidate because it has **not** yet autonomously graduated Geyser Rock or completed the planned long soaks.
+
+## Why Jak is a separate policy
+
+Madden is dominated by discrete menus, play phases, scoreboard OCR, possession inference and short bounded controller actions. Jak is a continuous third-person platformer with control semantics that change for vehicles, animals and machines. Its perception/policy layers therefore remain Jak-specific:
+
+- traversable-space, ledge and hazard estimation
+- continuous locomotion and camera steering
+- jump/roll-jump/platforming skills
+- enemy perception and attack/evasion policy
+- persistent collectible/objective progress
+- death/checkpoint recovery
+- cutscene/dialog preservation
+- persistent route consequence memory
+- mode-specific policies for Zoomer, Flut Flut, cannon and minigames
+
+Those systems belong in Jak modules rather than conditionals inside the Madden stack.
+
+## Jak calibration workflow
+
+The production profile still supports observation/capture workflows. Representative templates may use names that carry both phase and special-mode evidence, for example:
 
 ```bat
 ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_gameplay_geyser --series 5
@@ -64,19 +97,3 @@ ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_gameplay_f
 ```
 
 Local PNG templates are gitignored because they contain copyrighted game imagery.
-
-## Why Jak is a separate policy
-
-Madden is dominated by discrete menus, play phases, scoreboard OCR, possession inference and short bounded controller actions. Jak is a continuous third-person platformer with control semantics that change for vehicles, animals and machines. Its perception/policy layers therefore remain Jak-specific:
-
-- traversable-space, ledge and hazard estimation
-- continuous locomotion and camera steering
-- jump/roll-jump timing
-- enemy perception and attack/evasion policy
-- persistent collectible/objective progress
-- death/checkpoint recovery
-- cutscene/dialog preservation
-- anti-loop exploration memory
-- mode-specific policies for Zoomer, Flut Flut, cannon and minigames
-
-Those systems belong in Jak modules rather than conditionals inside the Madden stack.
