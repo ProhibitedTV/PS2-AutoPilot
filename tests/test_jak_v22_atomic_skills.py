@@ -3,7 +3,7 @@ import numpy as np
 from ps2_autopilot.controllers.base import Controller
 from ps2_autopilot.profiles import JakAndDaxterProfile
 from ps2_autopilot.profiles.base import ProfileContext
-from ps2_autopilot.profiles.jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
+from ps2_autopilot.profiles.jak_and_daxter_v22_world import JakAndDaxterV22Profile
 from ps2_autopilot.profiles.registry import build_profile
 
 
@@ -39,6 +39,7 @@ def profile(**overrides) -> JakAndDaxterV22Profile:
         "random_seed": 22,
         "production_random_seed": 22,
         "learning_enabled": False,
+        "world_graph_enabled": False,
         "v22_skill_align_seconds": 0.05,
         "v22_skill_verify_seconds": 0.10,
         "v22_skill_timeout_seconds": 2.0,
