@@ -73,8 +73,13 @@ class Jak1GoalResolver:
     GAME_INFO_BUZZER_TOTAL_OFFSET = 88
     GAME_INFO_FUEL_OFFSET = 92
 
-    TRSQV_TRANS_OFFSET = 0
-    TRSQV_TRANSV_OFFSET = 48
+    # `trs` is a GOAL basic, not a structure. Its object payload reserves a 16-byte
+    # basic header before the three inherited inline vectors: trans @ +16, rot @ +32,
+    # scale @ +48. `trsqv` then appends transv at +64. Live SCUS-97124 made the old
+    # mistake obvious: reading +48 as velocity produced the constant scale (1,1,1)
+    # while reading +0 as position produced the basic header (0,0,0).
+    TRSQV_TRANS_OFFSET = 16
+    TRSQV_TRANSV_OFFSET = 64
 
     def __init__(
         self,

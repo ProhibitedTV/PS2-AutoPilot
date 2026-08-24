@@ -52,12 +52,17 @@ def _resolver(mem: FakeMemory) -> Jak1GoalResolver:
 
 def _write_valid_trsqv(mem: FakeMemory, root: int, actual_type: int) -> None:
     mem.write32(root - 4, actual_type)
-    mem.write_f32(root + 0, 4096.0)
-    mem.write_f32(root + 4, 8192.0)
-    mem.write_f32(root + 8, 12288.0)
-    mem.write_f32(root + 48, 2048.0)
-    mem.write_f32(root + 52, 0.0)
-    mem.write_f32(root + 56, -4096.0)
+    # GOAL basic header occupies +0..+15. trs vectors start at +16, with scale
+    # at +48 and trsqv's first appended vector (transv) at +64.
+    mem.write_f32(root + 16, 4096.0)
+    mem.write_f32(root + 20, 8192.0)
+    mem.write_f32(root + 24, 12288.0)
+    mem.write_f32(root + 48, 1.0)
+    mem.write_f32(root + 52, 1.0)
+    mem.write_f32(root + 56, 1.0)
+    mem.write_f32(root + 64, 2048.0)
+    mem.write_f32(root + 68, 0.0)
+    mem.write_f32(root + 72, -4096.0)
 
 
 def test_target_root_structural_scan_is_not_bound_to_process_size_metadata():
@@ -125,7 +130,7 @@ def test_target_root_structural_scan_rejects_typed_but_invalid_vector_candidate(
     good_root = 0x00410004
     mem.write32(target + 0x100, bad_root)
     mem.write32(bad_root - 4, trsqv_type)
-    mem.write_f32(bad_root, math.nan)
+    mem.write_f32(bad_root + resolver.TRSQV_TRANS_OFFSET, math.nan)
 
     mem.write32(target + 0x2A0, good_root)
     _write_valid_trsqv(mem, good_root, trsqv_type)
