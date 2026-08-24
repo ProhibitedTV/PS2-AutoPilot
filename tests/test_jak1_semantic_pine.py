@@ -69,12 +69,18 @@ def _retail_like_memory() -> FakeMemory:
     mem.write32(game_info_ptr - 4, game_info_type)
     mem.write32(target_ptr + 128, root_ptr)
 
-    mem.write_f32(root_ptr + 0, 4096.0)
-    mem.write_f32(root_ptr + 4, 8192.0)
-    mem.write_f32(root_ptr + 8, 12288.0)
-    mem.write_f32(root_ptr + 48, 2048.0)
-    mem.write_f32(root_ptr + 52, 0.0)
-    mem.write_f32(root_ptr + 56, -4096.0)
+    # GOAL basic `trs` has a 16-byte basic header, followed by trans/rot/scale.
+    # Keep scale at +48 as (1,1,1) to reproduce the live SCUS-97124 signature
+    # that exposed the old bug: +48 was incorrectly decoded as transv.
+    mem.write_f32(root_ptr + 16, 4096.0)
+    mem.write_f32(root_ptr + 20, 8192.0)
+    mem.write_f32(root_ptr + 24, 12288.0)
+    mem.write_f32(root_ptr + 48, 1.0)
+    mem.write_f32(root_ptr + 52, 1.0)
+    mem.write_f32(root_ptr + 56, 1.0)
+    mem.write_f32(root_ptr + 64, 2048.0)
+    mem.write_f32(root_ptr + 68, 0.0)
+    mem.write_f32(root_ptr + 72, -4096.0)
 
     mem.write_f32(game_info_ptr + 16, 5.0)
     mem.write_f32(game_info_ptr + 20, 12.0)
@@ -117,6 +123,7 @@ def test_jak1_goal_symbols_self_resolve_without_absolute_addresses():
     assert state["jak_y"] == 2.0
     assert state["jak_z"] == 3.0
     assert state["jak_vx"] == 0.5
+    assert state["jak_vy"] == 0.0
     assert state["jak_vz"] == -1.0
     assert state["pine_target_root_offset"] == 128
 
