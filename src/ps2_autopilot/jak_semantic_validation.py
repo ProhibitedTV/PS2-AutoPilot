@@ -54,6 +54,8 @@ def _counter_value(row: dict[str, Any], aliases: tuple[str, ...]) -> int | None:
 
 
 def _boolish(value: Any) -> bool | None:
+    if value is None:
+        return None
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)) and value in {0, 1}:
