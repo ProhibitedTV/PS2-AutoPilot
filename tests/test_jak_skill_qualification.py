@@ -9,6 +9,16 @@ from ps2_autopilot.jak_lab import build_template
 from ps2_autopilot.jak_skill_qualification import evaluate_qualification
 
 
+_ATOMIC_SKILLS = {
+    "first-gap-hop": "hop_step",
+    "blocked-target-jump": "jump",
+    "high-gap-double-jump": "double_jump",
+    "roll-jump-gap": "roll_jump",
+    "scout-fly-dive": "dive",
+    "cliff-platform-chain": "platform_chain",
+}
+
+
 def _write_json(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
@@ -39,15 +49,16 @@ def _configured_lab(tmp_path: Path) -> tuple[Path, list[str]]:
 
 def _trace(path: Path, challenge_id: str, *, passed: bool = True, seconds: int = 2) -> None:
     start = datetime(2026, 8, 24, 21, 0, tzinfo=timezone.utc)
-    if challenge_id == "first-gap-hop":
+    atomic_skill = _ATOMIC_SKILLS.get(challenge_id)
+    if atomic_skill is not None:
         before = {
-            "jak_skill_hop_step_successes": 0,
-            "jak_skill_hop_step_safety_aborts": 0,
+            f"jak_skill_{atomic_skill}_successes": 0,
+            f"jak_skill_{atomic_skill}_safety_aborts": 0,
             "jak_atomic_skill_active": False,
         }
         after = {
-            "jak_skill_hop_step_successes": 1 if passed else 0,
-            "jak_skill_hop_step_safety_aborts": 0,
+            f"jak_skill_{atomic_skill}_successes": 1 if passed else 0,
+            f"jak_skill_{atomic_skill}_safety_aborts": 0,
             "jak_atomic_skill_active": False,
         }
     elif challenge_id == "shoreline-swim-escape":
