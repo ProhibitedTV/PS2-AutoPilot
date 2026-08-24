@@ -44,6 +44,23 @@ EVENT_KEYS = (
     "kickoff",
 )
 
+OWNED_EVENT_KEYS = (
+    "touchdown_for",
+    "touchdown_against",
+    "field_goal_for",
+    "field_goal_against",
+    "interception_made",
+    "interception_thrown",
+    "sack_caused",
+    "sack_suffered",
+    "first_down_gained",
+    "first_down_allowed",
+    "incomplete_on_offense",
+    "incomplete_on_defense",
+    "fumble_on_offense",
+    "opponent_fumble_observed",
+)
+
 
 def _states(root: Path) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
@@ -77,17 +94,31 @@ def _counter_peak(states: list[dict[str, Any]], key: str) -> int:
     return int(max(values, default=0.0))
 
 
-def _event_peaks(states: list[dict[str, Any]]) -> dict[str, int]:
-    peaks: dict[str, int] = {key: 0 for key in EVENT_KEYS}
+def _nested_counter_peaks(states: list[dict[str, Any]], field: str) -> dict[str, int]:
+    peaks: dict[str, int] = {}
     for state in states:
-        raw = state.get("game_event_counts")
+        raw = state.get(field)
         if not isinstance(raw, dict):
             continue
-        for key in EVENT_KEYS:
-            value = _number(raw.get(key))
-            if value is not None:
-                peaks[key] = max(peaks[key], int(value))
+        for key, raw_value in raw.items():
+            value = _number(raw_value)
+            if value is None:
+                continue
+            name = str(key)
+            peaks[name] = max(peaks.get(name, 0), int(value))
     return peaks
+
+
+def _event_peaks(states: list[dict[str, Any]]) -> dict[str, int]:
+    peaks = {key: 0 for key in EVENT_KEYS}
+    observed = _nested_counter_peaks(states, "game_event_counts")
+    for key in EVENT_KEYS:
+        peaks[key] = observed.get(key, 0)
+    return peaks
+
+
+def _attribution_peaks(states: list[dict[str, Any]]) -> dict[str, int]:
+    return _nested_counter_peaks(states, "game_event_attribution_counts")
 
 
 def _pct(numerator: int | float, denominator: int | float) -> float:
@@ -109,6 +140,7 @@ def session_policy_metrics(root: Path, states: list[dict[str, Any]] | None = Non
     values = list(states if states is not None else _states(root))
     counters = {key: _counter_peak(values, key) for key in COUNTER_KEYS}
     events = _event_peaks(values)
+    attributed_events = _attribution_peaks(values)
     live = [state for state in values if str(state.get("phase") or "") == "live"]
 
     unknown_possession = sum(
@@ -130,6 +162,7 @@ def session_policy_metrics(root: Path, states: list[dict[str, Any]] | None = Non
         "policy_versions": policy_versions,
         "counters": counters,
         "events": events,
+        "attributed_events": attributed_events,
         "live_quality": {
             "unknown_possession_pct": _pct(unknown_possession, len(live)),
             "spatial_available_pct": _pct(spatial_available, len(live)),
@@ -161,12 +194,14 @@ def build_policy_report(paths: Iterable[str | Path]) -> dict[str, Any]:
     per_session = [session_policy_metrics(root, states) for root, states in sessions]
     counters: Counter[str] = Counter()
     events: Counter[str] = Counter()
+    attributed: Counter[str] = Counter()
     total_live = 0
     weighted_rates: Counter[str] = Counter()
     versions: set[str] = set()
     for item in per_session:
         counters.update(item["counters"])
         events.update(item["events"])
+        attributed.update(item["attributed_events"])
         live_samples = int(item["live_samples"])
         total_live += live_samples
         versions.update(item["policy_versions"])
@@ -198,6 +233,13 @@ def build_policy_report(paths: Iterable[str | Path]) -> dict[str, Any]:
         + counters["defense_contact_authorized_ticks"]
     )
 
+    attributed_events = {key: int(attributed[key]) for key in sorted(attributed)}
+    ownership_unknown = sum(
+        int(value)
+        for key, value in attributed.items()
+        if key.endswith("_ownership_unknown")
+    )
+
     soak = build_soak_report([root for root, _states_value in sessions])
     soak_overall = overall_metrics(soak)
 
@@ -218,6 +260,18 @@ def build_policy_report(paths: Iterable[str | Path]) -> dict[str, Any]:
             "scoring_events": events["touchdown"] + events["field_goal"],
             "turnover_events": events["interception"] + events["fumble"],
             "events": {key: int(events[key]) for key in EVENT_KEYS},
+            "attributed_events": attributed_events,
+            "ownership_unknown_events": ownership_unknown,
+            "scoring_events_for": attributed["touchdown_for"] + attributed["field_goal_for"],
+            "scoring_events_against": (
+                attributed["touchdown_against"] + attributed["field_goal_against"]
+            ),
+            "interceptions_made": attributed["interception_made"],
+            "interceptions_thrown": attributed["interception_thrown"],
+            "sacks_caused": attributed["sack_caused"],
+            "sacks_suffered": attributed["sack_suffered"],
+            "first_downs_gained": attributed["first_down_gained"],
+            "first_downs_allowed": attributed["first_down_allowed"],
         },
         "live_quality": live_quality,
         "defense": {
