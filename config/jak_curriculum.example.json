@@ -1,0 +1,103 @@
+{
+  "challenges": [
+    {
+      "atomic_skill": "hop_step",
+      "description": "Short Geyser traversal gap suitable for hop-step verification.",
+      "expected_telemetry": [
+        "jak_skill_hop_step_attempts",
+        "jak_skill_hop_step_successes"
+      ],
+      "id": "first-gap-hop",
+      "kind": "atomic_skill",
+      "objective_stage": "first_cell",
+      "savestate_path": null
+    },
+    {
+      "atomic_skill": "jump",
+      "description": "Low obstruction or blocked reward requiring one committed jump.",
+      "expected_telemetry": [
+        "jak_skill_jump_attempts",
+        "jak_skill_jump_successes"
+      ],
+      "id": "blocked-target-jump",
+      "kind": "atomic_skill",
+      "objective_stage": "first_cell",
+      "savestate_path": null
+    },
+    {
+      "atomic_skill": "double_jump",
+      "description": "Representative gap or ledge requiring a double-jump transaction.",
+      "expected_telemetry": [
+        "jak_skill_double_jump_attempts",
+        "jak_skill_double_jump_successes"
+      ],
+      "id": "high-gap-double-jump",
+      "kind": "atomic_skill",
+      "objective_stage": "cliff_cell",
+      "savestate_path": null
+    },
+    {
+      "atomic_skill": "roll_jump",
+      "description": "Open approach with enough runway for deterministic roll-jump testing.",
+      "expected_telemetry": [
+        "jak_skill_roll_jump_attempts",
+        "jak_skill_roll_jump_successes"
+      ],
+      "id": "roll-jump-gap",
+      "kind": "atomic_skill",
+      "objective_stage": "cliff_cell",
+      "savestate_path": null
+    },
+    {
+      "atomic_skill": "dive",
+      "description": "Stable Scout Fly box alignment before the jump-and-dive interaction.",
+      "expected_telemetry": [
+        "jak_skill_dive_attempts",
+        "jak_skill_dive_successes"
+      ],
+      "id": "scout-fly-dive",
+      "kind": "atomic_skill",
+      "objective_stage": "scout_flies",
+      "savestate_path": null
+    },
+    {
+      "atomic_skill": "platform_chain",
+      "description": "Representative cliff ledge for the V22 platform-chain controller.",
+      "expected_telemetry": [
+        "jak_skill_platform_chain_attempts",
+        "jak_skill_platform_chain_successes"
+      ],
+      "id": "cliff-platform-chain",
+      "kind": "atomic_skill",
+      "objective_stage": "cliff_cell",
+      "savestate_path": null
+    },
+    {
+      "atomic_skill": null,
+      "description": "Confirmed-water start near a recoverable Geyser shoreline.",
+      "expected_telemetry": [
+        "jak_water_uturns",
+        "jak_learning_water_escape_events_v22"
+      ],
+      "id": "shoreline-swim-escape",
+      "kind": "safety",
+      "objective_stage": null,
+      "savestate_path": null
+    },
+    {
+      "atomic_skill": null,
+      "description": "Blue Eco acquired or immediately available before the Precursor door run.",
+      "expected_telemetry": [
+        "jak_objective_stage",
+        "jak_goal_progress_events"
+      ],
+      "id": "blue-eco-door-run",
+      "kind": "objective",
+      "objective_stage": "blue_eco_door",
+      "savestate_path": null
+    }
+  ],
+  "game": "jak_and_daxter_the_precursor_legacy",
+  "notes": "Fill savestate_path only with real PCSX2 savestates captured from the calibrated live build. Do not invent coordinates, RAM addresses, or states.",
+  "schema_version": 1
+}
