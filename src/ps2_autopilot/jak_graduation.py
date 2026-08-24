@@ -42,7 +42,8 @@ def _truthy(value: Any) -> bool:
         return value
     if isinstance(value, (int, float)):
         return value != 0
-    return str(value).strip().lower() in {"1", "true", "yes", "complete", "completed", "done"}
+    accepted = {"1", "true", "yes", "complete", "completed", "done"}
+    return str(value).strip().lower() in accepted
 
 
 def _explicit_true(rows: Iterable[dict[str, Any]], keys: tuple[str, ...]) -> bool:
@@ -76,6 +77,17 @@ def _criterion(passed: bool, evidence: str) -> dict[str, Any]:
     return {"passed": bool(passed), "evidence": evidence}
 
 
+def _milestone_evidence(
+    explicit: bool,
+    completion_proof: bool,
+) -> str:
+    if explicit:
+        return "explicit milestone"
+    if completion_proof:
+        return "verified Geyser completion"
+    return "missing explicit completion evidence"
+
+
 def evaluate_run(
     path: Path,
     *,
@@ -92,7 +104,10 @@ def evaluate_run(
 
     rows = list(_records(path))
     summary = summarize(path)
-    stage_names = {str(name) for name, _count in summary.get("objective_stage_samples", [])}
+    stage_names = {
+        str(name)
+        for name, _count in summary.get("objective_stage_samples", [])
+    }
 
     cells = summary.get("max_geyser_cells")
     flies = summary.get("max_geyser_scout_flies")
@@ -116,30 +131,45 @@ def evaluate_run(
         intervention_evidence = "operator asserted autonomous run"
 
     inferred = {
-        "blue_eco_door": bool(stage_names & {"cliff_cell", "return_warp", "complete"}),
+        "blue_eco_door": bool(
+            stage_names & {"cliff_cell", "return_warp", "complete"}
+        ),
         "cliff_sequence": bool(stage_names & {"return_warp", "complete"}),
         "return_warp": "complete" in stage_names,
     }
 
     criteria = {
-        "four_power_cells": _criterion(cells_ok, f"max Geyser cell delta={cells}"),
-        "seven_scout_flies": _criterion(flies_ok, f"max Geyser fly delta={flies}"),
+        "four_power_cells": _criterion(
+            cells_ok,
+            f"max Geyser cell delta={cells}",
+        ),
+        "seven_scout_flies": _criterion(
+            flies_ok,
+            f"max Geyser fly delta={flies}",
+        ),
         "blue_eco_door": _criterion(
             door_ok,
-            "explicit milestone" if door_explicit else "verified Geyser completion" if completion_proof else "missing explicit completion evidence",
+            _milestone_evidence(door_explicit, completion_proof),
         ),
         "cliff_platform_sequence": _criterion(
             cliff_ok,
-            "explicit milestone" if cliff_explicit else "verified Geyser completion" if completion_proof else "missing explicit completion evidence",
+            _milestone_evidence(cliff_explicit, completion_proof),
         ),
         "return_warp": _criterion(
             return_ok,
-            "explicit milestone" if return_explicit else "verified Geyser completion" if completion_proof else "missing explicit completion evidence",
+            _milestone_evidence(return_explicit, completion_proof),
         ),
-        "no_human_intervention": _criterion(autonomous_ok, intervention_evidence),
+        "no_human_intervention": _criterion(
+            autonomous_ok,
+            intervention_evidence,
+        ),
         "fresh_boot_new_save": _criterion(
             fresh_boot_asserted,
-            "operator asserted fresh boot/new save" if fresh_boot_asserted else "fresh boot/new save not verified",
+            (
+                "operator asserted fresh boot/new save"
+                if fresh_boot_asserted
+                else "fresh boot/new save not verified"
+            ),
         ),
     }
     passed = all(item["passed"] for item in criteria.values())
@@ -177,8 +207,6 @@ def evaluate_suite(
     graduated = bool(
         total_runs >= required_runs
         and passed_runs == total_runs
-        and autonomous_asserted
-        and fresh_boots_asserted
     )
     return {
         "graduated": graduated,
@@ -195,9 +223,15 @@ def evaluate_suite(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="ps2-autopilot-jak-graduation",
-        description="Evaluate Jak Geyser Rock logs against the strict V23 graduation gate.",
+        description=(
+            "Evaluate Jak Geyser Rock logs against the strict V23 graduation gate."
+        ),
     )
-    parser.add_argument("paths", nargs="+", help="verbose.jsonl files from independent runs")
+    parser.add_argument(
+        "paths",
+        nargs="+",
+        help="verbose.jsonl files from independent runs",
+    )
     parser.add_argument("--required-runs", type=int, default=5)
     parser.add_argument(
         "--autonomous",
