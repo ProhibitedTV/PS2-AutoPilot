@@ -71,6 +71,16 @@ class Madden2005V24Profile(Madden2005V23Profile):
         self.special_teams_unknown_kicking_ticks = 0
         self.special_teams_scoring_ambiguities = 0
 
+        # Event ownership is diagnostic only; it never feeds controller decisions.
+        # Attribute only when the possession state was already reasonably trusted
+        # before the base V6 event handler performs interception/fumble mutations.
+        self.event_attribution_min_confidence = max(
+            0.50,
+            min(0.95, float(cfg.get("event_attribution_min_confidence", 0.60))),
+        )
+        self.game_event_attribution_counts: dict[str, int] = {}
+        self.last_game_event_attribution = "none"
+
     @staticmethod
     def _compact_special_teams(text: str | None) -> str:
         return re.sub(r"[^A-Z0-9]", "", str(text or "").upper())
@@ -192,6 +202,65 @@ class Madden2005V24Profile(Madden2005V23Profile):
             self._clear_special_teams("special-teams latch expired")
 
         return obs
+
+    @staticmethod
+    def attribute_game_event(
+        event: str,
+        possession: Possession,
+        confidence: float,
+        *,
+        minimum_confidence: float = 0.60,
+    ) -> str:
+        """Classify a semantic football event relative to our controlled side.
+
+        This consumes possession *before* the base event handler flips it after an
+        interception or reduces confidence after a fumble. Low-confidence ownership
+        remains explicit rather than turning an uncertain OCR event into a policy KPI.
+        Punts, kickoffs and penalties are observed but intentionally left unowned.
+        """
+
+        event = str(event or "").strip().lower()
+        if not event:
+            return "none"
+        if possession == Possession.UNKNOWN or float(confidence) < float(minimum_confidence):
+            return f"{event}_ownership_unknown"
+
+        by_role: dict[str, tuple[str, str]] = {
+            "touchdown": ("touchdown_for", "touchdown_against"),
+            "field_goal": ("field_goal_for", "field_goal_against"),
+            "interception": ("interception_thrown", "interception_made"),
+            "sack": ("sack_suffered", "sack_caused"),
+            "first_down": ("first_down_gained", "first_down_allowed"),
+            "incomplete": ("incomplete_on_offense", "incomplete_on_defense"),
+            # FUMBLE OCR does not prove who recovered it. Record whose possession
+            # context produced the banner without claiming a forced/won turnover.
+            "fumble": ("fumble_on_offense", "opponent_fumble_observed"),
+        }
+        labels = by_role.get(event)
+        if labels is None:
+            return f"{event}_observed"
+        return labels[0] if possession == Possession.OFFENSE else labels[1]
+
+    def _note_game_event(self, now: float) -> None:
+        before_counts = dict(self.game_event_counts)
+        possession_before = self.possession
+        confidence_before = self.possession_confidence
+        super()._note_game_event(now)
+
+        for event, count in self.game_event_counts.items():
+            delta = int(count) - int(before_counts.get(event, 0))
+            if delta <= 0:
+                continue
+            attribution = self.attribute_game_event(
+                event,
+                possession_before,
+                confidence_before,
+                minimum_confidence=self.event_attribution_min_confidence,
+            )
+            self.last_game_event_attribution = attribution
+            self.game_event_attribution_counts[attribution] = (
+                self.game_event_attribution_counts.get(attribution, 0) + delta
+            )
 
     def _transition_phase(self, new_phase: MaddenPhase, now: float) -> None:
         old_phase = self.phase
@@ -322,6 +391,11 @@ class Madden2005V24Profile(Madden2005V23Profile):
                 "special_teams_recognitions": self.special_teams_recognitions,
                 "special_teams_unknown_kicking_ticks": self.special_teams_unknown_kicking_ticks,
                 "special_teams_scoring_ambiguities": self.special_teams_scoring_ambiguities,
+                "event_attribution_min_confidence": round(
+                    self.event_attribution_min_confidence, 2
+                ),
+                "last_game_event_attribution": self.last_game_event_attribution,
+                "game_event_attribution_counts": dict(self.game_event_attribution_counts),
             }
         )
         return state
