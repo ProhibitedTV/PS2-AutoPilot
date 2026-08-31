@@ -54,10 +54,11 @@ from .madden2005_v32 import Madden2005V32Profile
 from .nfs_hot_pursuit_2 import NfsHotPursuit2V1Profile, NfsPhase
 from .nfs_hot_pursuit_2_v2 import NfsHotPursuit2V2Profile, NfsRoute, NfsScreen
 from .nfs_hot_pursuit_2_v3 import NfsHotPursuit2V3Profile
+from .nfs_hot_pursuit_2_v4 import NfsHotPursuit2V4Profile
 
 JakAndDaxterProfile = JakAndDaxterV22Profile
 Madden2005Profile = Madden2005V32Profile
-NfsHotPursuit2Profile = NfsHotPursuit2V3Profile
+NfsHotPursuit2Profile = NfsHotPursuit2V4Profile
 
 from .registry import (  # noqa: E402
     ProfileSpec,
@@ -128,6 +129,7 @@ __all__ = [
     "NfsHotPursuit2V1Profile",
     "NfsHotPursuit2V2Profile",
     "NfsHotPursuit2V3Profile",
+    "NfsHotPursuit2V4Profile",
     "NfsPhase",
     "NfsRoute",
     "NfsScreen",
