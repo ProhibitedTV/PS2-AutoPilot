@@ -1,4 +1,8 @@
+import numpy as np
+
 from ps2_autopilot.controllers.base import Controller
+from ps2_autopilot.madden_vision import MaddenObservation, MaddenVisualState
+from ps2_autopilot.profiles.base import ProfileContext
 from ps2_autopilot.profiles.madden2005 import MaddenPhase, Possession, QueuedTap
 from ps2_autopilot.profiles.madden2005_v24 import SpecialTeamsIntent, SpecialTeamsSide
 from ps2_autopilot.profiles.madden2005_v25 import Madden2005V25Profile
@@ -30,6 +34,19 @@ class RecordingController(Controller):
 
 def profile() -> Madden2005V25Profile:
     return Madden2005V25Profile({"ocr_enabled": False, "random_seed": 25})
+
+
+def observation() -> MaddenObservation:
+    return MaddenObservation(
+        MaddenVisualState.FIELD_IDLE,
+        green_ratio=0.50,
+        field_center_x=0.0,
+        motion_center_x=0.0,
+        brightness=0.50,
+        motion=0.0,
+        template_name=None,
+        template_score=None,
+    )
 
 
 def test_leaving_kicking_discards_pending_meter_taps_before_live_policy_can_run():
@@ -99,15 +116,12 @@ def test_v25_telemetry_exposes_queue_boundary_health():
     p.phase = MaddenPhase.KICKING
     p.queue.append(QueuedTap(2.1, "cross"))
     p._transition_phase(MaddenPhase.POST_PLAY, 2.0)
+    p.last_observation = observation()
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    ctx = ProfileContext(frame=frame, motion=0.0, template=None, now=2.0)
 
-    class Context:
-        now = 2.0
-        frame = None
-        motion = 0.0
-        template = None
-        previous_frame = None
+    state = p.telemetry(ctx)
 
-    state = p.telemetry(Context())
     assert state["madden_policy_version"] == "v25"
     assert state["kick_queue_phase_exits"] == 1
     assert state["kick_queue_clear_events"] == 1
