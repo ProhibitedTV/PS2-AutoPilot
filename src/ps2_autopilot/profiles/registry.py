@@ -6,7 +6,7 @@ from typing import Callable
 from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
 from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
-from .madden2005_v29 import Madden2005V29Profile
+from .madden2005_v30 import Madden2005V30Profile
 
 
 @dataclass(frozen=True)
@@ -23,7 +23,7 @@ def _generic_factory(cfg: dict) -> GameProfile:
 
 
 def _madden_factory(cfg: dict) -> GameProfile:
-    return Madden2005V29Profile(dict(cfg))
+    return Madden2005V30Profile(dict(cfg))
 
 
 def _jak_factory(cfg: dict) -> GameProfile:
@@ -44,9 +44,9 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         template_namespace="madden2005",
         # V23 earned a seven-game unattended lifecycle soak. V24/V25 changed
         # special-teams/kick ownership; V26/V27 changed active football semantics;
-        # V28 added root-menu reacquisition; V29 adds live-evidence visual play-call
-        # reacquisition and a game-native Ask Madden fallback for OCR-sparse screens.
-        # Re-soak the complete active stack before promotion.
+        # V28 added root-menu reacquisition; V29 added live-evidence visual play-call
+        # reacquisition and Ask Madden fallback; V30 adds verified Controller Layout
+        # modal ownership after a live restart. Re-soak the complete active stack.
         maturity="production-candidate",
         factory=_madden_factory,
     ),
