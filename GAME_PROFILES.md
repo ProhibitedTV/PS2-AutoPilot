@@ -6,8 +6,9 @@ PS2 AutoPilot is a multi-game PCSX2 runtime. Game-specific behavior lives behind
 
 | Profile | Game | Current policy | Maturity | Config |
 | --- | --- | --- | --- | --- |
-| `madden2005` | Madden NFL 2005 | `Madden2005V25Profile` | production-candidate | `config/madden2005.yaml` |
+| `madden2005` | Madden NFL 2005 | `Madden2005V32Profile` | production-candidate | `config/madden2005.yaml` |
 | `jak_and_daxter` | Jak and Daxter: The Precursor Legacy | `JakAndDaxterV22Profile` | production-candidate | `config/jak_and_daxter.yaml` |
+| `nfs_hot_pursuit_2` | Need for Speed: Hot Pursuit 2 | `NfsHotPursuit2V2Profile` | diagnostic | `config/nfs_hot_pursuit_2.yaml` |
 | `generic_chaos` | Generic smoke test | generic | diagnostic | custom |
 
 List the registry at any time:
@@ -16,7 +17,7 @@ List the registry at any time:
 ps2-autopilot --list-profiles
 ```
 
-The Madden and Jak implementations are independently versioned. `madden2005` resolves to V25 and `jak_and_daxter` resolves to V22; neither policy imports the other game's state machine.
+The real-game implementations are independently versioned. Shared runtime plumbing is reused; football, platforming and racing assumptions stay inside their respective policies.
 
 ## Run one game
 
@@ -26,62 +27,57 @@ Madden remains the backwards-compatible default:
 run24x7.cmd
 ```
 
-Jak has a dedicated entry point:
+Jak:
 
 ```bat
 run-jak24x7.cmd
 ```
 
-Equivalent explicit command:
+Need for Speed: Hot Pursuit 2:
 
 ```bat
-run24x7.cmd config\jak_and_daxter.yaml
+run-nfs24x7.cmd
 ```
 
-`run24x7.cmd` launches the Python supervisor. AutoPilot process crashes are restarted conservatively. When an explicit local PCSX2/game argv list is configured, the supervisor can also detect render-window/process loss and relaunch PCSX2. Terminating an existing emulator after repeated failures requires a separate opt-in; machine-specific executable and game-image paths are intentionally not committed.
+Equivalent explicit commands use `run24x7.cmd <config>`. The supervisor can restart AutoPilot and, when explicitly configured, relaunch PCSX2. Machine-specific emulator/game-image paths remain local.
 
-See `SUPERVISOR.md` and `RECOVERY_LADDER.md` for the ownership and safety boundaries.
+See `SUPERVISOR.md` and `RECOVERY_LADDER.md` for ownership and safety boundaries.
 
 ## Maturity means active-version evidence
 
-Maturity describes the policy currently selected by the registry, not the best evidence ever achieved by an older policy version. A successor that changes behavior must re-earn live acceptance rather than automatically inheriting its predecessor's badge.
+Maturity describes the policy currently selected by the registry, not the best evidence ever achieved by an older version. A successor that changes behavior must re-earn live acceptance.
 
-- `diagnostic`: smoke-test tooling, not a production game policy.
-- `production-candidate`: implementation and regression coverage are strong enough for targeted live acceptance, but the active policy still has unresolved live gates.
-- `soak-tested`: the active policy itself has completed the repository's defined unattended soak/acceptance evidence.
-
-This distinction is why Madden V25 is currently `production-candidate`: V23 completed a seven-game unattended lifecycle soak, while V24 changed special-teams ownership/possession semantics and V25 now tightens timed kick-input ownership at the KICKING phase boundary. The active policy has not yet repeated the final live acceptance suite.
+- `diagnostic`: implementation/calibration tooling exists, but the active game policy has not earned unattended lifecycle evidence.
+- `production-candidate`: implementation and regression coverage are strong enough for targeted live acceptance, but unresolved live gates remain.
+- `soak-tested`: the active policy itself has completed the repository's unattended soak/acceptance evidence.
 
 ## Validation boundaries
 
-### Madden NFL 2005
+### Madden NFL 2005 — V32
 
-The Madden lifecycle has strong real-run evidence. V23 and its predecessors autonomously reached games, completed postgame navigation, returned to `PLAY NOW`, rotated teams/sides, and completed a seven-game unattended soak before an EA SPORTS Bio modal exposed a new blocker. That blocker was subsequently promoted into a dedicated write-safe recovery path.
+Madden has the strongest repeated lifecycle evidence in the repository. V23 completed a seven-game unattended exhibition soak; later versions changed active special-teams, football, reacquisition and presentation behavior, so the current V32 policy remains a production candidate until its own live acceptance gates are repeated.
 
-V24 established the current special-teams state model:
+The active stack includes:
 
-- strict kickoff, kick-return, punt, punt-return, field-goal and extra-point intent
-- separate kicking-side and returning-side controller ownership
-- no kick-meter inputs while the CPU owns a return kick
-- kick/punt returns hand live possession to offense with a bounded run-only return policy
-- kickoff/punt coverage hands live possession to defense
-- ambiguous scoring-kick live transitions drop invented possession confidence instead of guessing
+- title/main-menu and PLAY NOW navigation;
+- team/home-away rotation;
+- offense/defense and special-teams ownership;
+- playcall, pre-snap, live-play, post-play and presentation state;
+- scoreboard/OCR and spatial hypotheses;
+- root-menu reacquisition and controller-help handling;
+- theme-tolerant live playcall reacquisition;
+- quarter-break and broadcast-presentation input safety;
+- retained evidence, acceptance tooling and supervisor recovery boundaries.
 
-V25 preserves those semantics and hardens the timed kick-meter transaction itself. Madden queues three Cross presses for a kick's start, power, and accuracy. If vision accepts a transition out of `KICKING` before every queued tap has fired, V25 discards the remainder immediately so a stale meter input cannot leak into `LIVE`, `POST_PLAY`, or another screen. Telemetry reports KICKING phase exits, queue-clear events, discarded taps, and the last clear reason for live calibration.
-
-Those semantics are regression-tested but the active V25 profile still needs live calibration/soak evidence, so it remains a production candidate.
-
-Issue #3 has three remaining live lifecycle gates: repeated fresh-boot selection, a real PCSX2 process-death recovery during the exhibition loop, and a clean overnight soak after the latest fixes. The closure tool is:
+Useful acceptance command:
 
 ```bat
 ps2-autopilot-madden-acceptance --help
 ```
 
-It consumes retained evidence through the shared runtime-evidence contract and does not infer operator assertions such as a fresh boot or deliberate process-death test from file presence alone.
+### Jak and Daxter — V22
 
-### Jak and Daxter
-
-Jak V22 has crossed the old save-file calibration boundary. Real PCSX2 sessions have exercised:
+Real PCSX2 sessions have exercised:
 
 ```text
 PRESS START
@@ -92,11 +88,9 @@ PRESS START
  -> Geyser Rock gameplay
 ```
 
-The current profile includes continuous analog navigation, water/shoreline recovery, ledge/platform skills, target/route validation, atomic relocation, optional read-only PINE semantics, persistent route-consequence memory, and hardened water-danger learning. The PINE bridge self-resolves the supported Jak 1 GOAL runtime schema instead of relying on invented absolute RAM addresses.
+The active policy includes continuous analog navigation, water/shoreline recovery, platforming skills, route/target validation, optional read-only PINE semantics, persistent consequence memory and hardened water-danger learning. Semantic/contact validation remains fail-closed, and Geyser Rock graduation still requires retained evidence.
 
-Semantic validation and contact probing remain fail-closed. Geyser Rock graduation requires retained evidence rather than planner inference, and the active V22 policy remains a production candidate until its live semantic/graduation gates pass.
-
-Useful validation commands include:
+Useful validation commands:
 
 ```bat
 ps2-autopilot-jak-semantic-check --help
@@ -106,35 +100,47 @@ ps2-autopilot-jak-acceptance --help
 ps2-autopilot-jak-validation --help
 ```
 
-## Why Jak is a separate policy
+### Need for Speed: Hot Pursuit 2 — V2
 
-Madden is dominated by discrete menus, play phases, scoreboard OCR, possession inference and short bounded controller actions. Jak is a continuous third-person platformer with control semantics that change for vehicles, animals and machines. Its perception/policy layers therefore remain Jak-specific:
+NFS HP2 is the first racing policy and deliberately begins at `diagnostic` maturity. V1 established adaptive road-corridor perception, analog steering and bounded racing recovery. V2 adds researched PlayStation 2 semantics:
 
-- traversable-space, ledge and hazard estimation
-- continuous locomotion and camera steering
-- jump/roll-jump/platforming skills
-- enemy perception and attack/evasion policy
-- persistent collectible/objective progress
-- death/checkpoint recovery
-- cutscene/dialog preservation
-- persistent route consequence memory
-- mode-specific policies for Zoomer, Flut Flut, cannon and minigames
+- root topology: Hot Pursuit / World Racing / Options;
+- World Racing and Hot Pursuit submenu route planners;
+- default World Racing -> Quick Race unattended target;
+- selected-row template ownership instead of blind menu navigation;
+- steering-reversal damping and race-motion stall recovery;
+- PS2 R1 handbrake hook, disabled until calibrated;
+- You're The Cop Circle siren/target and R3 speed boost support;
+- optional R2 roadblock/spike-strip and L2 helicopter support;
+- replay/pause/save/busted-screen input ownership;
+- V2 route/police/racing telemetry.
 
-Those systems belong in Jak modules rather than conditionals inside the Madden stack.
+V2 may still take over after an operator manually enters a chase-camera race using repeated high-confidence road evidence. This lets road control be calibrated before the full menu template corpus exists.
 
-## Jak calibration workflow
+Live gates are tracked in issue #129. See:
 
-The production profile still supports observation/capture workflows. Representative templates may use names that carry both phase and special-mode evidence, for example:
+```text
+NFS_HP2_V1.md
+NFS_HP2_V2.md
+```
+
+## Why these policies stay separate
+
+Madden is dominated by menus, OCR, possession and short phase-bound controller transactions. Jak is a continuous third-person platformer with hazards, routes, objectives and movement skills. NFS is a continuous racing controller where the primary problem is extracting a drivable corridor, predicting bend direction, managing speed and preserving menu/race-mode ownership.
+
+Those semantics should not become branches inside one giant profile. The registry keeps them behind the same runtime contract while each game owns its own perception and policy state.
+
+## Local template workflow
+
+Templates are game-specific and may contain copyrighted game imagery, so local PNG calibration captures remain gitignored.
+
+Examples:
 
 ```bat
 ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_gameplay_geyser --series 5
-ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_cutscene --series 5
-ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_pause --series 3
-ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_death --series 3
-ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_gameplay_zoomer --series 5
-ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_gameplay_flut_flut --series 5
-ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_gameplay_cannon --series 5
-ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_gameplay_fishing --series 5
+ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_main_menu_world_racing_selected --series 3
+ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_world_racing_quick_race_selected --series 3
+ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_race_hud --series 5
 ```
 
-Local PNG templates are gitignored because they contain copyrighted game imagery.
+Prefer tight stable ROIs over full dynamic frames when a distinctive selected row, HUD element or dialog region is available.
