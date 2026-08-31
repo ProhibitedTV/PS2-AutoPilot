@@ -1,6 +1,7 @@
 import numpy as np
 
 from ps2_autopilot.madden_menu import MaddenScreen, MenuAssessment
+from ps2_autopilot.madden_ocr import OCRSnapshot
 from ps2_autopilot.profiles.madden2005 import MaddenPhase
 from ps2_autopilot.profiles.madden2005_v32 import Madden2005V32Profile
 
@@ -139,7 +140,7 @@ def arm_sparse_postplay_spillover(p: Madden2005V32Profile) -> None:
     p.last_confident_gameplay_at = 12.5
     p.last_presentation_exit_at = 10.0
     p.last_observation = None
-    p.last_ocr.text = ""
+    p.last_ocr = OCRSnapshot(lines=(), text="", available=False)
 
 
 def test_sparse_postplay_broadcast_cutaway_gets_bounded_hold():
