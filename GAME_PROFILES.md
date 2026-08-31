@@ -8,7 +8,7 @@ PS2 AutoPilot is a multi-game PCSX2 runtime. Game-specific behavior lives behind
 | --- | --- | --- | --- | --- |
 | `madden2005` | Madden NFL 2005 | `Madden2005V32Profile` | production-candidate | `config/madden2005.yaml` |
 | `jak_and_daxter` | Jak and Daxter: The Precursor Legacy | `JakAndDaxterV22Profile` | production-candidate | `config/jak_and_daxter.yaml` |
-| `nfs_hot_pursuit_2` | Need for Speed: Hot Pursuit 2 | `NfsHotPursuit2V3Profile` | diagnostic | `config/nfs_hot_pursuit_2.yaml` |
+| `nfs_hot_pursuit_2` | Need for Speed: Hot Pursuit 2 | `NfsHotPursuit2V4Profile` | diagnostic | `config/nfs_hot_pursuit_2.yaml` |
 | `generic_chaos` | Generic smoke test | generic | diagnostic | custom |
 
 List the registry at any time:
@@ -57,17 +57,7 @@ Maturity describes the policy currently selected by the registry, not the best e
 
 Madden has the strongest repeated lifecycle evidence in the repository. V23 completed a seven-game unattended exhibition soak; later versions changed active special-teams, football, reacquisition and presentation behavior, so the current V32 policy remains a production candidate until its own live acceptance gates are repeated.
 
-The active stack includes:
-
-- title/main-menu and PLAY NOW navigation;
-- team/home-away rotation;
-- offense/defense and special-teams ownership;
-- playcall, pre-snap, live-play, post-play and presentation state;
-- scoreboard/OCR and spatial hypotheses;
-- root-menu reacquisition and controller-help handling;
-- theme-tolerant live playcall reacquisition;
-- quarter-break and broadcast-presentation input safety;
-- retained evidence, acceptance tooling and supervisor recovery boundaries.
+The active stack includes title/main-menu and PLAY NOW navigation, team/home-away rotation, football phase ownership, scoreboard/OCR and spatial hypotheses, root-menu reacquisition, theme-tolerant playcall reacquisition, quarter-break/broadcast input safety, retained evidence, acceptance tooling and supervisor recovery boundaries.
 
 Useful acceptance command:
 
@@ -77,16 +67,7 @@ ps2-autopilot-madden-acceptance --help
 
 ### Jak and Daxter — V22
 
-Real PCSX2 sessions have exercised:
-
-```text
-PRESS START
- -> NEW GAME
- -> save/slot flow
- -> overwrite confirmation when applicable
- -> opening presentation
- -> Geyser Rock gameplay
-```
+Real PCSX2 sessions have exercised PRESS START -> NEW GAME -> save/slot flow -> opening presentation -> Geyser Rock gameplay.
 
 The active policy includes continuous analog navigation, water/shoreline recovery, platforming skills, route/target validation, optional read-only PINE semantics, persistent consequence memory and hardened water-danger learning. Semantic/contact validation remains fail-closed, and Geyser Rock graduation still requires retained evidence.
 
@@ -100,28 +81,25 @@ ps2-autopilot-jak-acceptance --help
 ps2-autopilot-jak-validation --help
 ```
 
-### Need for Speed: Hot Pursuit 2 — V3
+### Need for Speed: Hot Pursuit 2 — V4
 
 NFS HP2 is the first racing policy and remains deliberately `diagnostic` until real PCSX2 evidence proves unattended lifecycle behavior.
 
-V1 established adaptive road-corridor perception, analog steering and bounded racing recovery. V2 added researched PlayStation 2 semantics: Hot Pursuit / World Racing / Options routing, selected-row templates, replay/pause ownership, steering stabilization and You're The Cop controls.
+V1 established adaptive road-corridor perception, analog steering and bounded recovery. V2 added PS2 menu topology, route planning, replay/pause ownership and You're The Cop controls. V3 added evidence-stable selected-row transactions, predictive steering, coasting and one-shot lifecycle exits.
 
-V3 hardens those systems for unattended use:
+V4 adds mechanics specific to Hot Pursuit 2:
 
-- selected-row evidence must remain stable before directional menu input;
-- every menu action becomes a progress-acknowledged transaction;
-- one bounded retry is allowed only when the exact same positive selected-row evidence persists;
-- generic or UNKNOWN menu frames never authorize a retry;
-- stalled menu rows block further input until positive visual progress appears;
-- replay, pause and results exits are one-shot rather than periodic Start/Confirm spam;
-- manual race takeover after a known menu requires an UNKNOWN escape window plus repeated road evidence;
-- single-frame road segmentation failures receive a short motion-gated grace window;
-- road-center and curvature rates provide a short predictive steering horizon;
-- moderate bends coast before severe bends reach the brake threshold;
-- low-confidence-but-still-drivable road observations coast rather than accelerate aggressively;
-- edge correction and existing steering-reversal damping reduce wall riding and lock-to-lock oscillation;
-- R1 handbrake remains implemented but disabled pending live calibration;
-- You're The Cop Circle/R3 support remains bounded, with R2/L2 support calls opt-in.
+- PS2 Classic/Extreme handling presets without blind Options navigation;
+- bounded countdown throttle preload for arcade race launches;
+- near-field traffic/barricade candidate perception with image-only steering disabled until calibrated;
+- positive-template roadblock, spike-strip and helicopter-hazard avoidance;
+- a distinct `pursuit_racer` drive mode for Hot Pursuit racer HUDs;
+- alternating, bounded recovery escalation for repeated guardrail/wall traps;
+- coherent-road early exit from recovery;
+- template-owned one-shot BUSTED continuation;
+- You're The Cop retargeting when a HUD state says a new suspect is needed;
+- optional R2/L2 support calls gated by explicit roadblock/spike-strip/helicopter readiness evidence by default;
+- expanded hazard, recovery, launch and police telemetry.
 
 Live gates are tracked in issue #129. See:
 
@@ -129,11 +107,12 @@ Live gates are tracked in issue #129. See:
 NFS_HP2_V1.md
 NFS_HP2_V2.md
 NFS_HP2_V3.md
+NFS_HP2_V4.md
 ```
 
 ## Why these policies stay separate
 
-Madden is dominated by menus, OCR, possession and short phase-bound controller transactions. Jak is a continuous third-person platformer with hazards, routes, objectives and movement skills. NFS is a continuous racing controller where the primary problem is extracting a drivable corridor, predicting bend direction, managing speed and preserving menu/race-mode ownership.
+Madden is dominated by menus, OCR, possession and short phase-bound controller transactions. Jak is a continuous third-person platformer with hazards, routes, objectives and movement skills. NFS is a continuous racing controller where the primary problem is extracting a drivable corridor, predicting bend direction, managing speed, avoiding traffic/police hazards and preserving menu/race-mode ownership.
 
 Those semantics should not become branches inside one giant profile. The registry keeps them behind the same runtime contract while each game owns its own perception and policy state.
 
@@ -148,6 +127,8 @@ ps2-autopilot-capture --config config\jak_and_daxter.yaml --label jak_gameplay_g
 ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_main_menu_world_racing_selected --series 3
 ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_world_racing_quick_race_selected --series 3
 ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_race_hud --series 5
+ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_race_hud_roadblock_avoid_left --series 3
+ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_busted_continue --series 3
 ```
 
 Prefer tight stable ROIs over full dynamic frames when a distinctive selected row, HUD element or dialog region is available.
