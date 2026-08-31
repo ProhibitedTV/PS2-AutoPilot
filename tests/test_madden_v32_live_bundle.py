@@ -33,6 +33,17 @@ def neutral_theme_playcall_frame() -> np.ndarray:
     return frame
 
 
+def red_theme_playcall_frame() -> np.ndarray:
+    frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    frame[int(720 * 0.64) : int(720 * 0.96), : int(1280 * 0.39)] = (0, 0, 185)
+    frame[int(720 * 0.64) : int(720 * 0.96), int(1280 * 0.39) : int(1280 * 0.98)] = (
+        28,
+        28,
+        28,
+    )
+    return frame
+
+
 def dark_broadcast_frame() -> np.ndarray:
     frame = np.zeros((720, 1280, 3), dtype=np.uint8)
     frame[:] = (34, 38, 42)
@@ -46,6 +57,13 @@ def test_neutral_team_theme_playcall_signature_is_recognized():
     assert p.visual_playcall_variant == "neutral"
     assert p.visual_playcall_left_neutral_ratio >= p.playcall_visual_neutral_ratio
     assert p.visual_playcall_right_dark_ratio >= p.playcall_visual_right_dark_ratio
+
+
+def test_legacy_red_playcall_signature_still_works():
+    p = profile()
+
+    assert p._looks_like_visual_playcall(red_theme_playcall_frame())
+    assert p.visual_playcall_variant == "red"
 
 
 def test_dark_broadcast_cutaway_does_not_match_neutral_playcall():
@@ -85,6 +103,7 @@ def test_quarter_break_hold_never_emits_menu_buttons():
     assert action == "presentation: end of 3rd quarter; hold inputs"
     assert p.phase == MaddenPhase.TRANSITION
     assert p.pregame_presentation
+    assert p.menu_assessment.screen == MaddenScreen.DIALOG
     assert not any(event[0] == "tap" for event in c.events)
 
 
@@ -111,3 +130,52 @@ def test_quarter_break_timeout_is_bounded():
 
     assert not p.quarter_break_active
     assert p.quarter_break_timeouts == 1
+
+
+def arm_sparse_postplay_spillover(p: Madden2005V32Profile) -> None:
+    p.phase = MaddenPhase.MENU
+    p.menu_assessment = MenuAssessment(MaddenScreen.UNKNOWN, 0.42, "unclassified OCR")
+    p.runtime_monitor.active_game = True
+    p.last_confident_gameplay_at = 12.5
+    p.last_presentation_exit_at = 10.0
+    p.last_observation = None
+    p.last_ocr.text = ""
+
+
+def test_sparse_postplay_broadcast_cutaway_gets_bounded_hold():
+    p = profile()
+    arm_sparse_postplay_spillover(p)
+
+    assert p._presentation_spillover_should_hold(13.0)
+
+
+def test_postplay_spillover_owns_input_without_button_press():
+    p = profile()
+    c = FakeController()
+    arm_sparse_postplay_spillover(p)
+
+    p._own_presentation_spillover(13.0)
+    action = p._pregame_hold(c, 13.1)
+
+    assert p.presentation_spillover_active
+    assert p.pregame_presentation
+    assert p.menu_assessment.screen == MaddenScreen.DIALOG
+    assert action == "presentation: post-play broadcast spillover; hold inputs"
+    assert not any(event[0] == "tap" for event in c.events)
+
+
+def test_postplay_spillover_expires_quickly():
+    p = profile()
+    arm_sparse_postplay_spillover(p)
+
+    assert not p._presentation_spillover_should_hold(
+        p.last_presentation_exit_at + p.presentation_spillover_seconds + 0.1
+    )
+
+
+def test_known_field_context_does_not_use_spillover_fallback():
+    p = profile()
+    arm_sparse_postplay_spillover(p)
+    p._navigation_context = lambda: "field"
+
+    assert not p._presentation_spillover_should_hold(13.0)
