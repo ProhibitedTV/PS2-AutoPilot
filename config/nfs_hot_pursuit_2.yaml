@@ -50,8 +50,8 @@ profile:
   # targets: championship, hot_pursuit_quick_race, ultimate_racer, be_the_cop.
   menu_route: world_racing_quick_race
 
-  # PS2-specific handling option selected in-game. V4 only changes controller gains;
-  # it does not blindly navigate Options to enforce the choice.
+  # PS2-specific handling option selected in-game. The policy only changes its
+  # controller gains; it does not blindly navigate Options to enforce the choice.
   handling_mode: classic
   extreme_steering_scale: 0.86
   extreme_curvature_scale: 0.90
@@ -112,8 +112,7 @@ profile:
   stall_seconds: 1.8
 
   # Near-field traffic/barricade perception. Telemetry is always produced, but
-  # image-only steering is intentionally disabled until real PCSX2 footage proves
-  # it stable across traffic, shadows, shortcuts and multiple environments.
+  # image-only steering remains opt-in until live PCSX2 footage proves it stable.
   hazard_sample_width: 360
   hazard_color_distance: 52.0
   obstacle_avoid_enabled: false
@@ -125,6 +124,15 @@ profile:
   hazard_brake_proximity: 0.82
   hazard_emergency_brake: true
 
+  # V5 temporal confirmation: if image-only avoidance is enabled, one candidate no
+  # longer owns steering. It must persist spatially across several frames, then its
+  # chosen pass side is held briefly so traffic jitter cannot create left/right weave.
+  hazard_confirm_frames: 3
+  hazard_center_tolerance: 0.28
+  hazard_track_smoothing: 0.55
+  hazard_release_seconds: 0.45
+  hazard_avoid_hold_seconds: 0.75
+
   # Positive directional hazard templates are safer and enabled immediately. Name
   # captures with labels such as:
   #   nfs_race_hud_roadblock_avoid_left
@@ -133,6 +141,22 @@ profile:
   template_hazard_avoid_enabled: true
   template_hazard_hold_seconds: 1.05
   template_hazard_strength: 0.72
+
+  # V5 HP2 shortcut support is positive-template only. A local capture such as
+  # nfs_race_hud_shortcut_enter_left latches a bounded line bias while the normal
+  # predictive speed controller remains in charge of throttle/braking.
+  shortcut_enabled: true
+  shortcut_hold_seconds: 1.45
+  shortcut_strength: 0.52
+  shortcut_blend: 0.62
+  shortcut_cooldown_seconds: 3.5
+
+  # Hot Pursuit racer anti-ram ownership. Labels such as police_ram_left mean the
+  # threat is on the left, so the policy evades right using the coast-first hazard
+  # path. No unlabeled pursuit frame can trigger this maneuver.
+  pursuit_evasion_enabled: true
+  pursuit_evasion_hold_seconds: 0.85
+  pursuit_evasion_strength: 0.72
 
   # Default PS2 bindings for Hot Pursuit 2.
   accelerate_action: cross
