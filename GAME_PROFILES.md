@@ -8,7 +8,7 @@ PS2 AutoPilot is a multi-game PCSX2 runtime. Game-specific behavior lives behind
 | --- | --- | --- | --- | --- |
 | `madden2005` | Madden NFL 2005 | `Madden2005V32Profile` | production-candidate | `config/madden2005.yaml` |
 | `jak_and_daxter` | Jak and Daxter: The Precursor Legacy | `JakAndDaxterV22Profile` | production-candidate | `config/jak_and_daxter.yaml` |
-| `nfs_hot_pursuit_2` | Need for Speed: Hot Pursuit 2 | `NfsHotPursuit2V4Profile` | diagnostic | `config/nfs_hot_pursuit_2.yaml` |
+| `nfs_hot_pursuit_2` | Need for Speed: Hot Pursuit 2 | `NfsHotPursuit2V5Profile` | diagnostic | `config/nfs_hot_pursuit_2.yaml` |
 | `generic_chaos` | Generic smoke test | generic | diagnostic | custom |
 
 List the registry at any time:
@@ -81,25 +81,22 @@ ps2-autopilot-jak-acceptance --help
 ps2-autopilot-jak-validation --help
 ```
 
-### Need for Speed: Hot Pursuit 2 — V4
+### Need for Speed: Hot Pursuit 2 — V5
 
 NFS HP2 is the first racing policy and remains deliberately `diagnostic` until real PCSX2 evidence proves unattended lifecycle behavior.
 
-V1 established adaptive road-corridor perception, analog steering and bounded recovery. V2 added PS2 menu topology, route planning, replay/pause ownership and You're The Cop controls. V3 added evidence-stable selected-row transactions, predictive steering, coasting and one-shot lifecycle exits.
+V1 established adaptive road-corridor perception, analog steering and bounded recovery. V2 added PS2 menu topology, route planning, replay/pause ownership and You're The Cop controls. V3 added evidence-stable selected-row transactions, predictive steering, coasting and one-shot lifecycle exits. V4 added countdown launch control, Hot Pursuit hazard templates, BUSTED continuation, pursuit-racer ownership and recovery escalation.
 
-V4 adds mechanics specific to Hot Pursuit 2:
+V5 adds traffic and route-choice behavior specific to Hot Pursuit 2:
 
-- PS2 Classic/Extreme handling presets without blind Options navigation;
-- bounded countdown throttle preload for arcade race launches;
-- near-field traffic/barricade candidate perception with image-only steering disabled until calibrated;
-- positive-template roadblock, spike-strip and helicopter-hazard avoidance;
-- a distinct `pursuit_racer` drive mode for Hot Pursuit racer HUDs;
-- alternating, bounded recovery escalation for repeated guardrail/wall traps;
-- coherent-road early exit from recovery;
-- template-owned one-shot BUSTED continuation;
-- You're The Cop retargeting when a HUD state says a new suspect is needed;
-- optional R2/L2 support calls gated by explicit roadblock/spike-strip/helicopter readiness evidence by default;
-- expanded hazard, recovery, launch and police telemetry.
+- image-only traffic candidates must persist across spatially consistent frames before they can own steering;
+- confirmed traffic chooses and briefly latches a pass side to reduce left/right weaving;
+- image-only traffic steering remains opt-in while confirmation telemetry is always available;
+- positive directional shortcut templates can commit the car to known track shortcuts;
+- shortcut steering preserves the predictive throttle/coast/brake controller;
+- roadblocks, police attacks and confirmed traffic preempt shortcut commitment;
+- Hot Pursuit racer anti-ram templates evade away from a known police attack side;
+- expanded traffic-track, shortcut and pursuit-evasion telemetry supports live calibration.
 
 Live gates are tracked in issue #129. See:
 
@@ -108,11 +105,12 @@ NFS_HP2_V1.md
 NFS_HP2_V2.md
 NFS_HP2_V3.md
 NFS_HP2_V4.md
+NFS_HP2_V5.md
 ```
 
 ## Why these policies stay separate
 
-Madden is dominated by menus, OCR, possession and short phase-bound controller transactions. Jak is a continuous third-person platformer with hazards, routes, objectives and movement skills. NFS is a continuous racing controller where the primary problem is extracting a drivable corridor, predicting bend direction, managing speed, avoiding traffic/police hazards and preserving menu/race-mode ownership.
+Madden is dominated by menus, OCR, possession and short phase-bound controller transactions. Jak is a continuous third-person platformer with hazards, routes, objectives and movement skills. NFS is a continuous racing controller where the primary problem is extracting a drivable corridor, predicting bend direction, managing speed, avoiding traffic/police hazards, choosing shortcuts and preserving menu/race-mode ownership.
 
 Those semantics should not become branches inside one giant profile. The registry keeps them behind the same runtime contract while each game owns its own perception and policy state.
 
@@ -128,6 +126,8 @@ ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_main_me
 ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_world_racing_quick_race_selected --series 3
 ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_race_hud --series 5
 ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_race_hud_roadblock_avoid_left --series 3
+ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_race_hud_shortcut_enter_left --series 3
+ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_hot_pursuit_hud_police_ram_left --series 3
 ps2-autopilot-capture --config config\nfs_hot_pursuit_2.yaml --label nfs_busted_continue --series 3
 ```
 
