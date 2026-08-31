@@ -46,12 +46,19 @@ observability:
 profile:
   name: nfs_hot_pursuit_2
 
-  # Menu automation is template-owned. V1 fails closed when no recognized
-  # template exists, while repeated high-confidence road evidence can still take
-  # over after an operator manually enters a race for calibration.
+  # V2 default: World Racing -> Quick Race. On PS2 this is a police-free quick
+  # race and gives us randomized race/car variety without entering an event tree.
+  # Other implemented routes: championship, hot_pursuit_quick_race,
+  # ultimate_racer, be_the_cop.
+  menu_route: world_racing_quick_race
+
+  # Menu automation remains template-owned. Generic menu captures are recognized
+  # only to hold ownership safely; directional inputs require selected-row labels.
   template_threshold: 0.84
   menu_action_seconds: 1.00
   results_hold_seconds: 5.0
+  replay_hold_seconds: 8.0
+  pause_resume_seconds: 1.5
 
   # Road perception / race entry.
   road_sample_width: 360
@@ -70,9 +77,33 @@ profile:
   corner_brake_threshold: 0.84
   corner_brake_interval_seconds: 0.85
 
-  # Default PS2 bindings for Hot Pursuit 2. Change here if PCSX2 is remapped.
+  # V2 oscillation and stuck-at-speed guards.
+  oscillation_delta: 0.55
+  oscillation_damping: 0.55
+  stall_motion_threshold: 0.0025
+  stall_seconds: 1.8
+
+  # Default PS2 bindings for Hot Pursuit 2.
   accelerate_action: cross
   brake_action: square
+  handbrake_action: r1
+
+  # The PS2 manual exposes R1 emergency brake. V2 has a sharp-turn handbrake hook,
+  # but keep it disabled until live track evidence proves it helps rather than spins.
+  handbrake_enabled: false
+  handbrake_threshold: 0.93
+  handbrake_curvature: 0.20
+  handbrake_interval_seconds: 1.25
+
+  # PS2 You're The Cop: Circle siren/target, R3 boost, R2 roadblock/spike strip,
+  # L2 helicopter. Support calls are opt-in until their availability HUD is captured.
+  cop_siren_action: circle
+  cop_boost_action: r3
+  cop_roadblock_action: r2
+  cop_helicopter_action: l2
+  cop_boost_interval_seconds: 4.0
+  cop_support_enabled: false
+  cop_support_interval_seconds: 18.0
 
   # Bounded road-loss / wrong-way recovery transaction.
   recovery_reverse_seconds: 0.70
