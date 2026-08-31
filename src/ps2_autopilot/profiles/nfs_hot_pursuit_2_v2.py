@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from enum import Enum
-import math
 
 from ps2_autopilot.controllers.base import Controller
 
@@ -22,12 +21,15 @@ class NfsRoute(str, Enum):
 class NfsScreen(str, Enum):
     UNKNOWN = "unknown"
     TITLE = "title"
+    MAIN_GENERIC = "main_generic"
     MAIN_HOT_PURSUIT = "main_hot_pursuit"
     MAIN_WORLD_RACING = "main_world_racing"
     MAIN_OPTIONS = "main_options"
+    WORLD_GENERIC = "world_generic"
     WORLD_QUICK_RACE = "world_quick_race"
     WORLD_CHALLENGE = "world_challenge"
     WORLD_CHAMPIONSHIP = "world_championship"
+    HOT_GENERIC = "hot_generic"
     HOT_QUICK_RACE = "hot_quick_race"
     HOT_COP = "hot_cop"
     HOT_CHALLENGE = "hot_challenge"
@@ -192,6 +194,12 @@ class NfsHotPursuit2V2Profile(NfsHotPursuit2V1Profile):
             return NfsScreen.CAR_SELECT
         if "race_setup" in n:
             return NfsScreen.RACE_SETUP
+        if "world_racing_menu" in n:
+            return NfsScreen.WORLD_GENERIC
+        if "hot_pursuit_menu" in n:
+            return NfsScreen.HOT_GENERIC
+        if "main_menu" in n:
+            return NfsScreen.MAIN_GENERIC
         if "press_start" in n or "title" in n:
             return NfsScreen.TITLE
         return NfsScreen.UNKNOWN
@@ -391,6 +399,7 @@ class NfsHotPursuit2V2Profile(NfsHotPursuit2V1Profile):
         elif screen is NfsScreen.COUNTDOWN:
             self._set_phase(NfsPhase.COUNTDOWN, ctx.now)
         elif screen in {
+            NfsScreen.MAIN_GENERIC,
             NfsScreen.MAIN_HOT_PURSUIT,
             NfsScreen.MAIN_WORLD_RACING,
             NfsScreen.MAIN_OPTIONS,
@@ -399,6 +408,8 @@ class NfsHotPursuit2V2Profile(NfsHotPursuit2V1Profile):
             self.drive_mode = "racer"
             self.cop_siren_sent = False
         elif screen in {
+            NfsScreen.WORLD_GENERIC,
+            NfsScreen.HOT_GENERIC,
             NfsScreen.WORLD_QUICK_RACE,
             NfsScreen.WORLD_CHALLENGE,
             NfsScreen.WORLD_CHAMPIONSHIP,
