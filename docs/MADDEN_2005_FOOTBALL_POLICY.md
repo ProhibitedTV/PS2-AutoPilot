@@ -84,8 +84,12 @@ screen is still at formation level, the policy enters the formation, waits for a
 fresh OCR result, and then selects the play. It does not queue both choices as one
 blind macro.
 
-If OCR is not trustworthy, the proven legacy path remains the fallback. Reliability
-still outranks cleverness.
+When OCR can neither identify named cards nor a formation, V29 no longer immediately
+falls back to the early random formation macro if the active-game visual evidence
+proves Madden's play-call screen is present. It invokes **Ask Madden once** and
+rescans. If the three recommendation names are still unreadable, the controller
+chooses only among those three Madden-recommended cards. This delegates personnel
+and formation sanity to the game's own coach AI instead of inventing a read.
 
 ### 3. Let run blocking develop
 
@@ -128,6 +132,28 @@ Strip, Hit Stick, jump-at-ball, and rush-move inputs are not part of routine
 verified contact because the current perception stack does not yet know enough to
 justify those gambles.
 
+## Live evidence hardening in V28/V29
+
+A live V27 run produced a useful UNKNOWN stack rather than a synthetic test case.
+Loading/player-card, weather, and stadium presentation were correctly protected by
+the existing pregame latch. Two failure classes were actionable:
+
+1. the Madden title prompt sometimes OCRs as compact `PRESSSTART BUTTON`, or even as
+   separate `PRESS` and `BUTTON` tokens while `MADDEN` and `2005` remain visible;
+2. active defensive formation screens sometimes lose all useful play-call OCR even
+   though the lower playbook UI is visually stable.
+
+V28 reacquires TITLE/MAIN_MENU from compact root evidence. V29 extends degraded title
+recovery and adds a two-factor visual play-call detector: the characteristic red-left
+and dark-right lower playbook chrome is trusted only while V21 already knows a game is
+active and the semantic classifier is UNKNOWN/DIALOG. Recognized PAUSED, FINAL,
+KICKING, normal presentation, and other semantic states remain authoritative.
+
+The live Buffalo/Miami captures calibrated the initial visual thresholds around a
+very strong lower-left red ratio (~0.81) and lower-right dark ratio (~0.79). Defaults
+are intentionally lower (0.58 / 0.66) to tolerate capture variance while still
+requiring the active-game latch as a second factor.
+
 ## Explicit perception limits
 
 The current system does **not** claim to know:
@@ -141,18 +167,21 @@ The current system does **not** claim to know:
 - tackle approach angle or defender leverage well enough to pick a juke/stiff-arm
   from geometry alone
 
-Where those facts are unavailable, the football layer uses conservative heuristics
-and telemetry rather than inventing certainty.
+The live defensive play-call screenshots visibly contain WR/TE/RB personnel counts,
+but the current global OCR did not reliably recover those small labels. V29 therefore
+uses Ask Madden as the honest fallback rather than claiming to have parsed personnel.
+Where facts are unavailable, the football layer uses conservative heuristics,
+game-native recommendations, and telemetry rather than inventing certainty.
 
 ## Next research/calibration targets
 
-1. Capture play-call screenshots from several offensive and defensive formations to
-   validate left/middle/right card-to-button mapping and OCR play-name quality.
-2. Associate visible receiver icons with tracked players after X brings up passing
+1. Add a targeted OCR/read path for the fixed WR/TE/RB personnel strip on defensive
+   play-call screens so base/Nickel/Dime/Quarter choice can become explicit.
+2. Capture Ask Madden recommendation screens to validate card OCR and confirm the
+   left/middle/right Square/Cross/Circle mapping under the new fallback.
+3. Associate visible receiver icons with tracked players after X brings up passing
    icons; use separation/nearby-defender geometry for an actual read progression.
-3. Parse score and field position reliably enough to add clock management,
+4. Parse score and field position reliably enough to add clock management,
    two-minute offense, four-minute offense, and field-goal-range decisions.
-4. Infer offensive personnel/receiver count at the defensive play-call screen so
-   base/Nickel/Dime/Quarter personnel can follow the game's own matchup guidance.
 5. Calibrate defender-target distance against real tackle animations before
    expanding beyond the conservative contact policy.
