@@ -1,5 +1,6 @@
 import pytest
 
+from ps2_autopilot.profiles import Madden2005Profile
 from ps2_autopilot.profiles.jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from ps2_autopilot.profiles.madden2005_v32 import Madden2005V32Profile
 from ps2_autopilot.profiles.registry import (
@@ -13,6 +14,7 @@ from ps2_autopilot.profiles.registry import (
 def test_registry_selects_exact_active_madden_v32_factory():
     profile = build_profile({"name": "madden2005", "ocr_enabled": False})
     assert type(profile) is Madden2005V32Profile
+    assert Madden2005Profile is Madden2005V32Profile
     assert get_profile_spec("madden2005").maturity == "production-candidate"
 
 
