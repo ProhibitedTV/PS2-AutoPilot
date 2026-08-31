@@ -42,9 +42,18 @@ from .madden2005_v20 import Madden2005V20Profile
 from .madden2005_v21 import Madden2005V21Profile
 from .madden2005_v22 import Madden2005V22Profile
 from .madden2005_v23 import Madden2005V23Profile
+from .madden2005_v24 import Madden2005V24Profile
+from .madden2005_v25 import Madden2005V25Profile
+from .madden2005_v26 import Madden2005V26Profile
+from .madden2005_v27 import Madden2005V27Profile
+from .madden2005_v28 import Madden2005V28Profile
+from .madden2005_v29 import Madden2005V29Profile
+from .madden2005_v30 import Madden2005V30Profile
+from .madden2005_v31 import Madden2005V31Profile
+from .madden2005_v32 import Madden2005V32Profile
 
 JakAndDaxterProfile = JakAndDaxterV22Profile
-Madden2005Profile = Madden2005V23Profile
+Madden2005Profile = Madden2005V32Profile
 
 from .registry import (  # noqa: E402
     ProfileSpec,
@@ -102,6 +111,15 @@ __all__ = [
     "Madden2005V21Profile",
     "Madden2005V22Profile",
     "Madden2005V23Profile",
+    "Madden2005V24Profile",
+    "Madden2005V25Profile",
+    "Madden2005V26Profile",
+    "Madden2005V27Profile",
+    "Madden2005V28Profile",
+    "Madden2005V29Profile",
+    "Madden2005V30Profile",
+    "Madden2005V31Profile",
+    "Madden2005V32Profile",
     "ProfileSpec",
     "build_profile",
     "canonical_profile_name",
