@@ -6,7 +6,7 @@ from typing import Callable
 from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
 from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
-from .madden2005_v31 import Madden2005V31Profile
+from .madden2005_v32 import Madden2005V32Profile
 
 
 @dataclass(frozen=True)
@@ -23,7 +23,7 @@ def _generic_factory(cfg: dict) -> GameProfile:
 
 
 def _madden_factory(cfg: dict) -> GameProfile:
-    return Madden2005V31Profile(dict(cfg))
+    return Madden2005V32Profile(dict(cfg))
 
 
 def _jak_factory(cfg: dict) -> GameProfile:
@@ -47,7 +47,9 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         # V28 added root-menu reacquisition; V29 added live-evidence visual play-call
         # reacquisition and Ask Madden fallback; V30 owns Controller Layout safely;
         # V31 keeps special-teams side ownership across playcall -> field setup and
-        # makes session checkpoint locks non-fatal. Re-soak the complete active stack.
+        # makes session checkpoint locks non-fatal; V32 makes visual play-call
+        # reacquisition team-theme tolerant and latches quarter-break presentation.
+        # Re-soak the complete active stack.
         maturity="production-candidate",
         factory=_madden_factory,
     ),
