@@ -132,6 +132,11 @@ def estimate_road(
 
     road = labels == best_label
     coverage = float(np.mean(road))
+    # A flat loading/menu/solid-color frame can perfectly match its own seed and
+    # otherwise masquerade as a giant road. Chase-camera pavement should leave a
+    # meaningful amount of non-road scene visible, so reject near-full-frame masks.
+    if coverage > 0.84:
+        return RoadObservation.unavailable()
 
     samples: list[tuple[float, float, float]] = []
     for fraction, weight in ((0.28, 0.34), (0.46, 0.30), (0.66, 0.22), (0.84, 0.14)):
