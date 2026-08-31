@@ -4,7 +4,9 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
+import threading
 import time
 from typing import Any
 
@@ -62,6 +64,10 @@ class MaddenRuntimeMonitor:
         self.last_unknown_capture_at = -1e9
         self.recent_unknown_hashes: deque[str] = deque(maxlen=24)
 
+        self.session_write_retries = 0
+        self.session_write_failures = 0
+        self.session_write_last_error: str | None = None
+
         session = self._load_session()
         self.session_started_utc = session.get("session_started_utc") or self._utc_now()
         self.games_started = int(session.get("games_started", 0))
@@ -82,7 +88,18 @@ class MaddenRuntimeMonitor:
         except Exception:
             return {}
 
-    def _save_session(self, telemetry: dict | None = None) -> None:
+    def _record_session_write_failure(self, exc: OSError) -> None:
+        self.session_write_failures += 1
+        self.session_write_last_error = f"{type(exc).__name__}: {exc}"
+        if self.session_write_failures == 1 or self.session_write_failures % 25 == 0:
+            print(
+                "[madden-runtime] session.json checkpoint skipped after transient file error; "
+                "in-memory gameplay state remains authoritative "
+                f"(failures={self.session_write_failures}, error={self.session_write_last_error})",
+                flush=True,
+            )
+
+    def _save_session(self, telemetry: dict | None = None) -> bool:
         payload = {
             "session_started_utc": self.session_started_utc,
             "last_heartbeat_utc": self._utc_now(),
@@ -103,9 +120,36 @@ class MaddenRuntimeMonitor:
                     "plays_completed": telemetry.get("plays_completed"),
                 }
             )
-        tmp = self.session_path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-        tmp.replace(self.session_path)
+
+        # Windows may temporarily deny replacing a JSON file while an editor,
+        # antivirus scanner, OBS helper, or another reader has a handle open. A
+        # telemetry checkpoint must never be able to terminate autonomous gameplay.
+        # Unique temp names also avoid collisions with stale temp files from a prior
+        # process or concurrent diagnostic reader.
+        tmp = self.root / f".session-{os.getpid()}-{threading.get_ident()}.tmp"
+        try:
+            tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+            for attempt in range(3):
+                try:
+                    tmp.replace(self.session_path)
+                    self.session_write_last_error = None
+                    return True
+                except PermissionError as exc:
+                    self.session_write_retries += 1
+                    self.session_write_last_error = f"{type(exc).__name__}: {exc}"
+                    if attempt < 2:
+                        time.sleep(0.01 * (attempt + 1))
+                        continue
+                    self._record_session_write_failure(exc)
+                    return False
+        except OSError as exc:
+            self._record_session_write_failure(exc)
+            return False
+        finally:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def _rotate_log_if_needed(self) -> None:
         try:
@@ -323,4 +367,7 @@ class MaddenRuntimeMonitor:
             "session_unknown_captures": self.unknown_captures,
             "semantic_still_seconds": round(max(0.0, now - self.last_progress_at), 1),
             "progress_recovery_level": self.recovery_level,
+            "session_write_retries": self.session_write_retries,
+            "session_write_failures": self.session_write_failures,
+            "session_write_last_error": self.session_write_last_error,
         }
