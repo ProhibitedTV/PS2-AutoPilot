@@ -165,6 +165,6 @@ def test_return_policy_is_run_only_and_never_emits_receiver_buttons():
     assert "run north/south" in action
 
 
-def test_registry_promotes_madden_to_v24():
+def test_registry_active_madden_preserves_v24_special_teams_contract():
     p = build_profile({"name": "madden2005", "ocr_enabled": False})
-    assert type(p) is Madden2005V24Profile
+    assert isinstance(p, Madden2005V24Profile)
