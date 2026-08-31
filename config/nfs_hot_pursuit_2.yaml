@@ -1,0 +1,79 @@
+window_title_contains: "PCSX2"
+loop_hz: 12
+
+performance:
+  opencv_threads: 2
+
+controller:
+  backend: virtual_gamepad
+  focus_window: true
+
+watchdog:
+  motion_threshold: 0.006
+  stuck_seconds: 18
+  recovery_cooldown_seconds: 7
+  reload_savestate_after_recoveries: 4
+  load_state_key: "f3"
+
+overlay:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8765
+  state_hz: 3.0
+
+runtime_retention:
+  max_total_mb: 300
+  max_failure_bundles: 30
+  max_unknown_captures: 80
+  prune_interval_seconds: 60
+
+observability:
+  enabled: true
+  console: true
+  verbose_console: true
+  heartbeat_seconds: 4.0
+  verbose_log_seconds: 0.75
+  spatial_log_seconds: 0.50
+  spatial_console_seconds: 1.5
+  history_size: 300
+  input_history_size: 400
+  max_log_bytes: 8000000
+  failure_bundle_cooldown_seconds: 8.0
+  max_failure_bundles: 30
+  stick_log_interval_seconds: 0.25
+  stick_log_delta: 0.05
+
+profile:
+  name: nfs_hot_pursuit_2
+
+  # Menu automation is template-owned. V1 fails closed when no recognized
+  # template exists, while repeated high-confidence road evidence can still take
+  # over after an operator manually enters a race for calibration.
+  template_threshold: 0.84
+  menu_action_seconds: 1.00
+  results_hold_seconds: 5.0
+
+  # Road perception / race entry.
+  road_sample_width: 360
+  road_color_distance: 42.0
+  race_enter_confidence: 0.56
+  drive_confidence: 0.34
+  race_enter_frames: 5
+  race_motion_threshold: 0.006
+  road_loss_recovery_seconds: 2.2
+
+  # Steering controller. Positive road center/curvature steers right.
+  steering_gain: 1.05
+  curvature_gain: 0.72
+  steering_smoothing: 0.42
+  max_steer: 0.95
+  corner_brake_threshold: 0.84
+  corner_brake_interval_seconds: 0.85
+
+  # Default PS2 bindings for Hot Pursuit 2. Change here if PCSX2 is remapped.
+  accelerate_action: cross
+  brake_action: square
+
+  # Bounded road-loss / wrong-way recovery transaction.
+  recovery_reverse_seconds: 0.70
+  recovery_forward_seconds: 0.85
