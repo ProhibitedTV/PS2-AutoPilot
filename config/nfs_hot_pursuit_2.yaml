@@ -50,10 +50,14 @@ profile:
   # targets: championship, hot_pursuit_quick_race, ultimate_racer, be_the_cop.
   menu_route: world_racing_quick_race
 
-  # V3 requires stable selected-row evidence before directional input, then treats
-  # each input as a transaction that must earn positive visual progress. The same
-  # positively recognized row may receive one bounded retry; generic/unknown frames
-  # never authorize a retry.
+  # PS2-specific handling option selected in-game. V4 only changes controller gains;
+  # it does not blindly navigate Options to enforce the choice.
+  handling_mode: classic
+  extreme_steering_scale: 0.86
+  extreme_curvature_scale: 0.90
+  extreme_min_smoothing: 0.52
+
+  # Stable selected-row evidence and progress-acknowledged menu transactions.
   template_threshold: 0.84
   menu_stability_frames: 2
   menu_action_seconds: 0.80
@@ -61,11 +65,15 @@ profile:
   menu_max_retries: 1
   menu_escape_takeover_seconds: 2.0
 
-  # One-shot lifecycle exits. Start/Confirm is sent once, then V3 waits for a
-  # different positive screen semantic instead of repeating through capture lag.
+  # One-shot lifecycle exits.
   results_hold_seconds: 5.0
   replay_hold_seconds: 8.0
   pause_resume_seconds: 1.5
+
+  # HP2 arcade start: hold gas during a positively recognized countdown. The hold
+  # is time-bounded so a stale countdown template cannot own throttle forever.
+  countdown_preload_throttle: true
+  countdown_preload_max_seconds: 6.0
 
   # Road perception / race entry.
   road_sample_width: 360
@@ -83,8 +91,7 @@ profile:
   steering_smoothing: 0.42
   max_steer: 0.95
 
-  # V3 predictive steering: estimate short-term movement of road center/curvature
-  # so the car starts responding before the bend occupies the near field.
+  # Predictive steering.
   steering_prediction_seconds: 0.18
   center_rate_gain: 1.00
   curvature_rate_gain: 0.75
@@ -92,19 +99,40 @@ profile:
   edge_correction_start: 0.62
   edge_correction_gain: 0.28
 
-  # Speed management. V3 coasts before severe bends instead of holding full throttle
-  # until a brake tap is required. Low-confidence-but-still-drivable road estimates
-  # also coast rather than accelerating aggressively.
+  # Speed management.
   corner_coast_threshold: 0.70
   low_confidence_coast_threshold: 0.44
   corner_brake_threshold: 0.86
   corner_brake_interval_seconds: 0.85
 
-  # Oscillation and stuck-at-speed guards inherited from V2.
+  # Oscillation and stuck-at-speed guards.
   oscillation_delta: 0.55
   oscillation_damping: 0.55
   stall_motion_threshold: 0.0025
   stall_seconds: 1.8
+
+  # Near-field traffic/barricade perception. Telemetry is always produced, but
+  # image-only steering is intentionally disabled until real PCSX2 footage proves
+  # it stable across traffic, shadows, shortcuts and multiple environments.
+  hazard_sample_width: 360
+  hazard_color_distance: 52.0
+  obstacle_avoid_enabled: false
+  hazard_confidence_threshold: 0.58
+  hazard_proximity_threshold: 0.55
+  hazard_steer_gain: 0.62
+  hazard_steer_blend: 0.72
+  hazard_coast_proximity: 0.66
+  hazard_brake_proximity: 0.82
+  hazard_emergency_brake: true
+
+  # Positive directional hazard templates are safer and enabled immediately. Name
+  # captures with labels such as:
+  #   nfs_race_hud_roadblock_avoid_left
+  #   nfs_race_hud_spike_strip_avoid_right
+  #   nfs_race_hud_helicopter_hazard_avoid_left
+  template_hazard_avoid_enabled: true
+  template_hazard_hold_seconds: 1.05
+  template_hazard_strength: 0.72
 
   # Default PS2 bindings for Hot Pursuit 2.
   accelerate_action: cross
@@ -118,16 +146,29 @@ profile:
   handbrake_curvature: 0.20
   handbrake_interval_seconds: 1.25
 
-  # You're The Cop controls. Automatic support calls remain opt-in until a live HUD
-  # capture proves availability/charge semantics.
+  # You're The Cop. Circle retargets when a calibrated HUD template explicitly says
+  # a new target is needed. R2/L2 support remains opt-in and, by default, additionally
+  # requires roadblock_ready/spike_strip_ready/helicopter_ready template evidence.
   cop_siren_action: circle
   cop_boost_action: r3
   cop_roadblock_action: r2
   cop_helicopter_action: l2
   cop_boost_interval_seconds: 4.0
+  cop_target_refresh_seconds: 2.0
   cop_support_enabled: false
+  cop_support_requires_template: true
   cop_support_interval_seconds: 18.0
 
-  # Bounded road-loss / wrong-way recovery transaction.
+  # Hot Pursuit racer failure flow. Generic BUSTED remains fail-closed; only a
+  # busted_continue/busted_confirm template authorizes the one-shot Confirm.
+  busted_hold_seconds: 3.5
+
+  # Bounded recovery escalation. Repeated guardrail/wall traps alternate steering
+  # side and modestly extend reverse/forward time instead of repeating one maneuver.
   recovery_reverse_seconds: 0.70
   recovery_forward_seconds: 0.85
+  recovery_streak_window_seconds: 14.0
+  recovery_streak_reset_seconds: 22.0
+  recovery_duration_step: 0.22
+  recovery_max_scale: 1.55
+  recovery_early_exit_confidence: 0.58
