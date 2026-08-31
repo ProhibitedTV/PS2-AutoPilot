@@ -7,6 +7,7 @@ from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
 from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from .madden2005_v32 import Madden2005V32Profile
+from .nfs_hot_pursuit_2 import NfsHotPursuit2V1Profile
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,10 @@ def _madden_factory(cfg: dict) -> GameProfile:
 
 def _jak_factory(cfg: dict) -> GameProfile:
     return JakAndDaxterV22Profile(dict(cfg))
+
+
+def _nfs_hp2_factory(cfg: dict) -> GameProfile:
+    return NfsHotPursuit2V1Profile(dict(cfg))
 
 
 PROFILE_SPECS: dict[str, ProfileSpec] = {
@@ -60,6 +65,15 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         maturity="production-candidate",
         factory=_jak_factory,
     ),
+    "nfs_hot_pursuit_2": ProfileSpec(
+        name="nfs_hot_pursuit_2",
+        display_name="Need for Speed: Hot Pursuit 2",
+        template_namespace="nfs_hot_pursuit_2",
+        # V1 is intentionally calibration-first: road driving is implemented, while
+        # full unattended boot/menu lifecycle acceptance waits on live template data.
+        maturity="diagnostic",
+        factory=_nfs_hp2_factory,
+    ),
 }
 
 PROFILE_ALIASES = {
@@ -67,6 +81,10 @@ PROFILE_ALIASES = {
     "jak": "jak_and_daxter",
     "jak1": "jak_and_daxter",
     "precursor_legacy": "jak_and_daxter",
+    "nfs": "nfs_hot_pursuit_2",
+    "nfs_hp2": "nfs_hot_pursuit_2",
+    "hot_pursuit_2": "nfs_hot_pursuit_2",
+    "need_for_speed_hot_pursuit_2": "nfs_hot_pursuit_2",
 }
 
 
