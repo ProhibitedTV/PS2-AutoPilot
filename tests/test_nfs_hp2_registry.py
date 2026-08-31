@@ -2,15 +2,17 @@ from ps2_autopilot.profiles import (
     NfsHotPursuit2Profile,
     NfsHotPursuit2V1Profile,
     NfsHotPursuit2V2Profile,
+    NfsHotPursuit2V3Profile,
 )
 from ps2_autopilot.profiles.registry import build_profile, canonical_profile_name, get_profile_spec
 
 
-def test_registry_selects_nfs_hp2_v2():
+def test_registry_selects_nfs_hp2_v3():
     profile = build_profile({"name": "nfs_hot_pursuit_2"})
-    assert type(profile) is NfsHotPursuit2V2Profile
-    assert NfsHotPursuit2Profile is NfsHotPursuit2V2Profile
-    assert NfsHotPursuit2V1Profile is not NfsHotPursuit2V2Profile
+    assert type(profile) is NfsHotPursuit2V3Profile
+    assert NfsHotPursuit2Profile is NfsHotPursuit2V3Profile
+    assert NfsHotPursuit2V1Profile is not NfsHotPursuit2V3Profile
+    assert NfsHotPursuit2V2Profile is not NfsHotPursuit2V3Profile
     assert get_profile_spec("nfs").name == "nfs_hot_pursuit_2"
     assert get_profile_spec("nfs_hp2").maturity == "diagnostic"
 

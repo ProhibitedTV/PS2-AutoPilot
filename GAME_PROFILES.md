@@ -8,7 +8,7 @@ PS2 AutoPilot is a multi-game PCSX2 runtime. Game-specific behavior lives behind
 | --- | --- | --- | --- | --- |
 | `madden2005` | Madden NFL 2005 | `Madden2005V32Profile` | production-candidate | `config/madden2005.yaml` |
 | `jak_and_daxter` | Jak and Daxter: The Precursor Legacy | `JakAndDaxterV22Profile` | production-candidate | `config/jak_and_daxter.yaml` |
-| `nfs_hot_pursuit_2` | Need for Speed: Hot Pursuit 2 | `NfsHotPursuit2V2Profile` | diagnostic | `config/nfs_hot_pursuit_2.yaml` |
+| `nfs_hot_pursuit_2` | Need for Speed: Hot Pursuit 2 | `NfsHotPursuit2V3Profile` | diagnostic | `config/nfs_hot_pursuit_2.yaml` |
 | `generic_chaos` | Generic smoke test | generic | diagnostic | custom |
 
 List the registry at any time:
@@ -100,28 +100,35 @@ ps2-autopilot-jak-acceptance --help
 ps2-autopilot-jak-validation --help
 ```
 
-### Need for Speed: Hot Pursuit 2 — V2
+### Need for Speed: Hot Pursuit 2 — V3
 
-NFS HP2 is the first racing policy and deliberately begins at `diagnostic` maturity. V1 established adaptive road-corridor perception, analog steering and bounded racing recovery. V2 adds researched PlayStation 2 semantics:
+NFS HP2 is the first racing policy and remains deliberately `diagnostic` until real PCSX2 evidence proves unattended lifecycle behavior.
 
-- root topology: Hot Pursuit / World Racing / Options;
-- World Racing and Hot Pursuit submenu route planners;
-- default World Racing -> Quick Race unattended target;
-- selected-row template ownership instead of blind menu navigation;
-- steering-reversal damping and race-motion stall recovery;
-- PS2 R1 handbrake hook, disabled until calibrated;
-- You're The Cop Circle siren/target and R3 speed boost support;
-- optional R2 roadblock/spike-strip and L2 helicopter support;
-- replay/pause/save/busted-screen input ownership;
-- V2 route/police/racing telemetry.
+V1 established adaptive road-corridor perception, analog steering and bounded racing recovery. V2 added researched PlayStation 2 semantics: Hot Pursuit / World Racing / Options routing, selected-row templates, replay/pause ownership, steering stabilization and You're The Cop controls.
 
-V2 may still take over after an operator manually enters a chase-camera race using repeated high-confidence road evidence. This lets road control be calibrated before the full menu template corpus exists.
+V3 hardens those systems for unattended use:
+
+- selected-row evidence must remain stable before directional menu input;
+- every menu action becomes a progress-acknowledged transaction;
+- one bounded retry is allowed only when the exact same positive selected-row evidence persists;
+- generic or UNKNOWN menu frames never authorize a retry;
+- stalled menu rows block further input until positive visual progress appears;
+- replay, pause and results exits are one-shot rather than periodic Start/Confirm spam;
+- manual race takeover after a known menu requires an UNKNOWN escape window plus repeated road evidence;
+- single-frame road segmentation failures receive a short motion-gated grace window;
+- road-center and curvature rates provide a short predictive steering horizon;
+- moderate bends coast before severe bends reach the brake threshold;
+- low-confidence-but-still-drivable road observations coast rather than accelerate aggressively;
+- edge correction and existing steering-reversal damping reduce wall riding and lock-to-lock oscillation;
+- R1 handbrake remains implemented but disabled pending live calibration;
+- You're The Cop Circle/R3 support remains bounded, with R2/L2 support calls opt-in.
 
 Live gates are tracked in issue #129. See:
 
 ```text
 NFS_HP2_V1.md
 NFS_HP2_V2.md
+NFS_HP2_V3.md
 ```
 
 ## Why these policies stay separate

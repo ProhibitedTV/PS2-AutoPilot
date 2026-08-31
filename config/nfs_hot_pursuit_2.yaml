@@ -46,16 +46,23 @@ observability:
 profile:
   name: nfs_hot_pursuit_2
 
-  # V2 default: World Racing -> Quick Race. On PS2 this is a police-free quick
-  # race and gives us randomized race/car variety without entering an event tree.
-  # Other implemented routes: championship, hot_pursuit_quick_race,
-  # ultimate_racer, be_the_cop.
+  # Default unattended route: World Racing -> Quick Race. Other implemented
+  # targets: championship, hot_pursuit_quick_race, ultimate_racer, be_the_cop.
   menu_route: world_racing_quick_race
 
-  # Menu automation remains template-owned. Generic menu captures are recognized
-  # only to hold ownership safely; directional inputs require selected-row labels.
+  # V3 requires stable selected-row evidence before directional input, then treats
+  # each input as a transaction that must earn positive visual progress. The same
+  # positively recognized row may receive one bounded retry; generic/unknown frames
+  # never authorize a retry.
   template_threshold: 0.84
-  menu_action_seconds: 1.00
+  menu_stability_frames: 2
+  menu_action_seconds: 0.80
+  menu_progress_timeout_seconds: 1.60
+  menu_max_retries: 1
+  menu_escape_takeover_seconds: 2.0
+
+  # One-shot lifecycle exits. Start/Confirm is sent once, then V3 waits for a
+  # different positive screen semantic instead of repeating through capture lag.
   results_hold_seconds: 5.0
   replay_hold_seconds: 8.0
   pause_resume_seconds: 1.5
@@ -68,16 +75,32 @@ profile:
   race_enter_frames: 5
   race_motion_threshold: 0.006
   road_loss_recovery_seconds: 2.2
+  road_grace_seconds: 0.22
 
-  # Steering controller. Positive road center/curvature steers right.
+  # Base steering controller.
   steering_gain: 1.05
   curvature_gain: 0.72
   steering_smoothing: 0.42
   max_steer: 0.95
-  corner_brake_threshold: 0.84
+
+  # V3 predictive steering: estimate short-term movement of road center/curvature
+  # so the car starts responding before the bend occupies the near field.
+  steering_prediction_seconds: 0.18
+  center_rate_gain: 1.00
+  curvature_rate_gain: 0.75
+  rate_smoothing: 0.58
+  edge_correction_start: 0.62
+  edge_correction_gain: 0.28
+
+  # Speed management. V3 coasts before severe bends instead of holding full throttle
+  # until a brake tap is required. Low-confidence-but-still-drivable road estimates
+  # also coast rather than accelerating aggressively.
+  corner_coast_threshold: 0.70
+  low_confidence_coast_threshold: 0.44
+  corner_brake_threshold: 0.86
   corner_brake_interval_seconds: 0.85
 
-  # V2 oscillation and stuck-at-speed guards.
+  # Oscillation and stuck-at-speed guards inherited from V2.
   oscillation_delta: 0.55
   oscillation_damping: 0.55
   stall_motion_threshold: 0.0025
@@ -88,15 +111,15 @@ profile:
   brake_action: square
   handbrake_action: r1
 
-  # The PS2 manual exposes R1 emergency brake. V2 has a sharp-turn handbrake hook,
-  # but keep it disabled until live track evidence proves it helps rather than spins.
+  # R1 emergency brake remains implemented but disabled until live track evidence
+  # proves that it helps on sharp bends rather than causing spins.
   handbrake_enabled: false
   handbrake_threshold: 0.93
   handbrake_curvature: 0.20
   handbrake_interval_seconds: 1.25
 
-  # PS2 You're The Cop: Circle siren/target, R3 boost, R2 roadblock/spike strip,
-  # L2 helicopter. Support calls are opt-in until their availability HUD is captured.
+  # You're The Cop controls. Automatic support calls remain opt-in until a live HUD
+  # capture proves availability/charge semantics.
   cop_siren_action: circle
   cop_boost_action: r3
   cop_roadblock_action: r2
