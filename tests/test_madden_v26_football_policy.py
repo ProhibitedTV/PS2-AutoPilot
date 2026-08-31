@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
-
 from ps2_autopilot.controllers.base import Controller
 from ps2_autopilot.madden_menu import GameSituation
 from ps2_autopilot.madden_ocr import OCRLine, OCRSnapshot
