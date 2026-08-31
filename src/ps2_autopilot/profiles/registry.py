@@ -6,7 +6,7 @@ from typing import Callable
 from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
 from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
-from .madden2005_v24 import Madden2005V24Profile
+from .madden2005_v25 import Madden2005V25Profile
 
 
 @dataclass(frozen=True)
@@ -23,7 +23,7 @@ def _generic_factory(cfg: dict) -> GameProfile:
 
 
 def _madden_factory(cfg: dict) -> GameProfile:
-    return Madden2005V24Profile(dict(cfg))
+    return Madden2005V25Profile(dict(cfg))
 
 
 def _jak_factory(cfg: dict) -> GameProfile:
@@ -42,8 +42,8 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         name="madden2005",
         display_name="Madden NFL 2005",
         template_namespace="madden2005",
-        # V23 earned a seven-game unattended lifecycle soak. V24 changes active
-        # special-teams ownership/possession semantics and therefore must re-earn
+        # V23 earned a seven-game unattended lifecycle soak. V24/V25 change active
+        # special-teams and kick-input ownership semantics and therefore must re-earn
         # soak-tested status rather than inheriting the predecessor's evidence.
         maturity="production-candidate",
         factory=_madden_factory,
