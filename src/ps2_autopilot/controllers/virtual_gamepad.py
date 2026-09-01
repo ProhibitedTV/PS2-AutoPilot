@@ -9,7 +9,9 @@ class VirtualGamepadController(Controller):
     """Xbox 360 virtual controller for PCSX2 via ViGEm/vgamepad.
 
     PCSX2 should map A/B/X/Y to PS2 Cross/Circle/Square/Triangle and the
-    Xbox triggers to PS2 L2/R2.
+    Xbox triggers to PS2 L2/R2. L3/R3 are exposed as the Xbox stick-click
+    buttons so game profiles can use PS2 stick-click actions such as Hot
+    Pursuit 2's police speed boost.
     """
 
     def __init__(self) -> None:
@@ -38,6 +40,8 @@ class VirtualGamepadController(Controller):
             "right": vg.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT,
             "l1": vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER,
             "r1": vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER,
+            "l3": vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_THUMB,
+            "r3": vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB,
         }
 
     @staticmethod
