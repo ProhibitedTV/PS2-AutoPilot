@@ -23,9 +23,11 @@ class NfsHotPursuit2V6Profile(NfsHotPursuit2V5Profile):
     bootstrap sequence (Start -> Down -> Confirm...) and waits for visual change
     after every input. Moving unknown scenes are observed before probing, with a
     bounded force-after escape so an animated attract/title screen cannot deadlock
-    forever. Strong road evidence also has a two-frame fast path, based on the live
-    V5 run where high-confidence road observations appeared but never survived the
-    old five-frame race-entry gate.
+    forever. Strong road evidence also has a fast path, but live V6 evidence showed
+    that menu/transition backgrounds can briefly resemble road. Fast takeover now
+    requires an input-quiet window and enters a short probation that keeps throttle
+    ownership without immediately invoking reverse recovery if road segmentation
+    flickers on the first gameplay frames.
     """
 
     name = "nfs_hot_pursuit_2"
@@ -69,6 +71,21 @@ class NfsHotPursuit2V6Profile(NfsHotPursuit2V5Profile):
             1, min(self.race_enter_frames, int(cfg.get("strong_road_enter_frames", 2)))
         )
 
+        # Live V6 showed a false fast takeover immediately after a bootstrap Confirm.
+        # Do not let transition/car-preview imagery become gameplay while an input is
+        # still settling. Once takeover occurs, keep bounded forward ownership while
+        # road segmentation stabilizes instead of instantly reversing on one dropout.
+        self.fast_takeover_input_quiet_seconds = max(
+            0.5, float(cfg.get("fast_takeover_input_quiet_seconds", 1.50))
+        )
+        self.fast_takeover_probation_seconds = max(
+            0.5, float(cfg.get("fast_takeover_probation_seconds", 1.50))
+        )
+        self.fast_takeover_min_motion = max(
+            self.race_motion_threshold,
+            float(cfg.get("fast_takeover_min_motion", 0.010)),
+        )
+
         configured_sequence = cfg.get("bootstrap_sequence")
         if isinstance(configured_sequence, (list, tuple)):
             cleaned = tuple(str(item).strip().lower() for item in configured_sequence if str(item).strip())
@@ -83,6 +100,13 @@ class NfsHotPursuit2V6Profile(NfsHotPursuit2V5Profile):
         self.bootstrap_reference: np.ndarray | None = None
         self.bootstrap_step = 0
         self.bootstrap_next_probe_at = 0.0
+        self.bootstrap_last_input_at = -1e9
+
+        self.fast_takeover_probation_until = -1e9
+        self.fast_takeover_probation_active = False
+        self.fast_takeover_probation_ticks = 0
+        self.fast_takeover_probation_rejections = 0
+        self.fast_takeover_quiet_blocks = 0
 
         self.bootstrap_actions = 0
         self.bootstrap_progress_acks = 0
@@ -99,8 +123,6 @@ class NfsHotPursuit2V6Profile(NfsHotPursuit2V5Profile):
         h, w = frame.shape[:2]
         if h < 2 or w < 2:
             return None
-        # A tiny luminance fingerprint is enough to acknowledge gross menu/screen
-        # progress and costs almost nothing in the 12 Hz control loop.
         ys = np.linspace(0, h - 1, 18, dtype=np.int32)
         xs = np.linspace(0, w - 1, 32, dtype=np.int32)
         sample = frame[np.ix_(ys, xs)].astype(np.float32)
@@ -132,6 +154,18 @@ class NfsHotPursuit2V6Profile(NfsHotPursuit2V5Profile):
             )
         self.bootstrap_stable_since = now
 
+    def _takeover_input_quiet(self, now: float) -> bool:
+        if self.bootstrap_pending_action is not None:
+            return False
+        return now - self.bootstrap_last_input_at >= self.fast_takeover_input_quiet_seconds
+
+    def _road_takeover_allowed(self, ctx: ProfileContext, screen: NfsScreen) -> bool:
+        # Apply the same quiet-window guard to the inherited ordinary road takeover;
+        # otherwise V3's five-frame path could race the V6 fast-path protection.
+        if not self._takeover_input_quiet(ctx.now):
+            return False
+        return super()._road_takeover_allowed(ctx, screen)
+
     def _fast_road_takeover(self, controller: Controller, ctx: ProfileContext) -> str | None:
         if self.phase in {NfsPhase.RACING, NfsPhase.RECOVERY}:
             return None
@@ -139,9 +173,12 @@ class NfsHotPursuit2V6Profile(NfsHotPursuit2V5Profile):
             return None
         if self.road.confidence < self.strong_road_confidence:
             return None
-        if ctx.motion < self.race_motion_threshold:
+        if ctx.motion < self.fast_takeover_min_motion:
             return None
         if self.race_evidence_frames < self.strong_road_enter_frames:
+            return None
+        if not self._takeover_input_quiet(ctx.now):
+            self.fast_takeover_quiet_blocks += 1
             return None
 
         self._clear_menu_transaction()
@@ -149,11 +186,51 @@ class NfsHotPursuit2V6Profile(NfsHotPursuit2V5Profile):
         self.drive_mode = "racer"
         self.race_entries += 1
         self.bootstrap_fast_race_entries += 1
+        self.fast_takeover_probation_active = True
+        self.fast_takeover_probation_until = ctx.now + self.fast_takeover_probation_seconds
         self._reset_bootstrap(reset_step=True)
         self._set_phase(NfsPhase.RACING, ctx.now)
         action = self._drive(controller, ctx)
-        self.last_action = f"unattended fast road takeover: {action}"
+        self.last_action = f"unattended fast road takeover probation: {action}"
         return self.last_action
+
+    def _drive(self, controller: Controller, ctx: ProfileContext) -> str:
+        if self.fast_takeover_probation_active:
+            self.fast_takeover_probation_ticks += 1
+            if self.road.confidence < self.drive_confidence:
+                # The first live V6 takeover saw 0.89 then 0.00 and immediately
+                # reversed. During probation, keep a modest straight launch instead;
+                # real gameplay gets a chance to move into a stable chase-camera view.
+                if ctx.now < self.fast_takeover_probation_until:
+                    controller.release(self.brake_action)
+                    controller.hold(self.accelerate_action)
+                    controller.set_left_stick(self.last_steer * 0.45, 0.0)
+                    self.road_lost_since = None
+                    return (
+                        "fast-takeover probation: forward launch while road reacquires "
+                        f"road={self.road.confidence:.2f} motion={ctx.motion:.3f}"
+                    )
+
+                controller.release_all()
+                controller.neutral_sticks()
+                self.road_lost_since = None
+                self.fast_takeover_probation_active = False
+                self.fast_takeover_probation_rejections += 1
+                self._set_phase(NfsPhase.CALIBRATION, ctx.now)
+                self.bootstrap_next_probe_at = max(
+                    self.bootstrap_next_probe_at,
+                    ctx.now + self.bootstrap_settle_seconds,
+                )
+                # Avoid immediately hitting Start after a road-like scene; on real
+                # gameplay Start would pause the game. Resume at the confirm portion
+                # of the bounded ladder instead.
+                self.bootstrap_step = min(2, max(0, len(self.bootstrap_sequence) - 1))
+                return "fast-takeover probation rejected: return to unattended reacquisition"
+
+            if ctx.now >= self.fast_takeover_probation_until:
+                self.fast_takeover_probation_active = False
+
+        return super()._drive(controller, ctx)
 
     def _bootstrap_tick(self, controller: Controller, ctx: ProfileContext) -> str:
         controller.release_all()
@@ -215,6 +292,7 @@ class NfsHotPursuit2V6Profile(NfsHotPursuit2V5Profile):
         self.bootstrap_actions += 1
         self.bootstrap_pending_action = action
         self.bootstrap_pending_since = ctx.now
+        self.bootstrap_last_input_at = ctx.now
         self.bootstrap_reference = current_fp
         self.bootstrap_next_probe_at = ctx.now + self.bootstrap_settle_seconds
         return (
@@ -233,8 +311,6 @@ class NfsHotPursuit2V6Profile(NfsHotPursuit2V5Profile):
         if fast is not None:
             return fast
 
-        # Any positive semantic remains authoritative. Templates are accelerators,
-        # not prerequisites; the probe ladder only owns genuinely UNKNOWN frames.
         if self.screen is not NfsScreen.UNKNOWN:
             self._reset_bootstrap(reset_step=True)
             return action
@@ -246,12 +322,11 @@ class NfsHotPursuit2V6Profile(NfsHotPursuit2V5Profile):
         return self.last_action
 
     def recover(self, controller: Controller) -> str:
-        # The shared motion watchdog can fire while sitting on an unknown menu.
-        # Never arm reverse/steer racing recovery unless we actually own gameplay.
         if self.phase not in {NfsPhase.RACING, NfsPhase.RECOVERY}:
             controller.release_all()
             controller.neutral_sticks()
             controller.tap("start", 0.08)
+            self.bootstrap_last_input_at = 0.0
             self.bootstrap_watchdog_kicks += 1
             return "nfs unattended bootstrap watchdog: tap start"
         return super().recover(controller)
@@ -277,6 +352,11 @@ class NfsHotPursuit2V6Profile(NfsHotPursuit2V5Profile):
                 "nfs_bootstrap_watchdog_kicks": self.bootstrap_watchdog_kicks,
                 "nfs_strong_road_confidence": self.strong_road_confidence,
                 "nfs_strong_road_enter_frames": self.strong_road_enter_frames,
+                "nfs_fast_takeover_input_quiet_seconds": self.fast_takeover_input_quiet_seconds,
+                "nfs_fast_takeover_probation_active": self.fast_takeover_probation_active,
+                "nfs_fast_takeover_probation_ticks": self.fast_takeover_probation_ticks,
+                "nfs_fast_takeover_probation_rejections": self.fast_takeover_probation_rejections,
+                "nfs_fast_takeover_quiet_blocks": self.fast_takeover_quiet_blocks,
             }
         )
         return state
