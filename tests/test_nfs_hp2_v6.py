@@ -145,6 +145,7 @@ def test_strong_two_frame_road_lock_takes_racing_ownership_without_template():
             "race_enter_frames": 5,
             "strong_road_confidence": 0.50,
             "strong_road_enter_frames": 2,
+            "fast_takeover_min_motion": 0.01,
             "corner_brake_threshold": 1.0,
         }
     )
@@ -157,7 +158,57 @@ def test_strong_two_frame_road_lock_takes_racing_ownership_without_template():
     assert profile.phase is NfsPhase.RACING
     assert profile.bootstrap_fast_race_entries == 1
     assert "fast road takeover" in action
+    assert profile.fast_takeover_probation_active is True
     assert any(event[:2] == ("hold", "cross") for event in controller.events)
+
+
+def test_recent_bootstrap_input_blocks_transition_frame_fast_takeover():
+    profile = NfsHotPursuit2V6Profile(
+        {
+            "race_enter_confidence": 0.20,
+            "drive_confidence": 0.20,
+            "race_enter_frames": 5,
+            "strong_road_confidence": 0.50,
+            "strong_road_enter_frames": 2,
+            "fast_takeover_input_quiet_seconds": 1.5,
+            "fast_takeover_min_motion": 0.01,
+        }
+    )
+    controller = FakeController()
+    profile.bootstrap_last_input_at = 60.0
+
+    profile.tick(controller, _ctx(_road_frame(), now=60.08, motion=0.04))
+    profile.tick(controller, _ctx(_road_frame(), now=60.16, motion=0.04))
+
+    assert profile.phase is not NfsPhase.RACING
+    assert profile.bootstrap_fast_race_entries == 0
+    assert profile.fast_takeover_quiet_blocks >= 1
+
+
+def test_fast_takeover_probation_drives_forward_through_initial_road_dropout():
+    profile = NfsHotPursuit2V6Profile(
+        {
+            "race_enter_confidence": 0.20,
+            "drive_confidence": 0.20,
+            "race_enter_frames": 5,
+            "strong_road_confidence": 0.50,
+            "strong_road_enter_frames": 2,
+            "fast_takeover_min_motion": 0.01,
+            "fast_takeover_probation_seconds": 1.5,
+            "corner_brake_threshold": 1.0,
+        }
+    )
+    controller = FakeController()
+
+    profile.tick(controller, _ctx(_road_frame(), now=70.0, motion=0.02))
+    profile.tick(controller, _ctx(_road_frame(), now=70.08, motion=0.02))
+    controller.events.clear()
+    action = profile.tick(controller, _ctx(_menu_frame(), now=70.40, motion=0.03))
+
+    assert profile.phase is NfsPhase.RACING
+    assert "forward launch while road reacquires" in action
+    assert ("hold", "cross") in controller.events
+    assert not any(event[:2] == ("hold", "square") for event in controller.events)
 
 
 def test_shared_watchdog_on_unknown_menu_kicks_start_not_racing_reverse():
