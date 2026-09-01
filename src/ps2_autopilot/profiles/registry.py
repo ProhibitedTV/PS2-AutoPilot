@@ -7,7 +7,7 @@ from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
 from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from .madden2005_v32 import Madden2005V32Profile
-from .nfs_hot_pursuit_2_v7 import NfsHotPursuit2V7Profile
+from .nfs_hot_pursuit_2_v8 import NfsHotPursuit2V8Profile
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,7 @@ def _jak_factory(cfg: dict) -> GameProfile:
 
 
 def _nfs_hp2_factory(cfg: dict) -> GameProfile:
-    return NfsHotPursuit2V7Profile(dict(cfg))
+    return NfsHotPursuit2V8Profile(dict(cfg))
 
 
 PROFILE_SPECS: dict[str, ProfileSpec] = {
@@ -69,9 +69,9 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         name="nfs_hot_pursuit_2",
         display_name="Need for Speed: Hot Pursuit 2",
         template_namespace="nfs_hot_pursuit_2",
-        # V7 adds template-free fixed-HUD gameplay ownership after overnight live
-        # evidence showed an active race being mistaken for UNKNOWN for eight hours.
-        # It remains diagnostic until the unattended lifecycle earns a real soak.
+        # V8 builds on V7 fixed-HUD ownership with alternating watchdog recovery
+        # and a last-resort Restart Race ladder after repeated long HUD-owned stalls.
+        # Keep diagnostic until the active unattended stack earns a fresh soak.
         maturity="diagnostic",
         factory=_nfs_hp2_factory,
     ),
