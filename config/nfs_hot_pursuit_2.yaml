@@ -111,6 +111,49 @@ profile:
   hard_restart_wait_seconds: 7.0
   hard_restart_progress_delta: 0.025
 
+  # V9 HUD-backed road memory. V3's generic road grace is intentionally tiny; V9
+  # can bridge a longer track-texture/shadow dropout only while the fixed race HUD is
+  # strong and the scene still has meaningful motion. A stationary wall trap cannot
+  # keep stale road ownership through this path.
+  hud_road_memory_seconds: 0.85
+  hud_road_memory_min_motion: 0.012
+
+  # V9 smarter recovery. The first two recovery attempts can use the most recent
+  # coherent road center to point the forward half of the maneuver back toward the
+  # course. Later attempts return to V4/V8 alternating-side escalation.
+  recovery_center_hint_seconds: 5.0
+  recovery_center_hint_min_abs: 0.14
+  recovery_center_hint_max_streak: 2
+
+  # V9 terminal race escape. Restart Race remains preferred. Only two consecutive
+  # restart attempts with no verified post-confirm visual progress arm Quit Race.
+  # Quit Race uses the documented pause-menu order and then hands control back to the
+  # unattended menu lifecycle. A cooldown prevents a runaway pause-menu loop.
+  hard_quit_enabled: true
+  hard_quit_after_restart_failures: 2
+  hard_quit_action_seconds: 0.55
+  hard_quit_wait_seconds: 8.0
+  hard_quit_progress_delta: 0.025
+  hard_quit_cooldown_seconds: 30.0
+
+  # V9 broadcast pacing/showmanship. Replay holds cycle so every race does not have
+  # identical presentation timing. Racer modes may make an occasional horn flourish
+  # only on a clean, well-observed straight. Cop mode is excluded because Circle has
+  # target/siren semantics there. Camera switching remains disabled for vision safety.
+  broadcast_replay_variation_enabled: true
+  broadcast_replay_holds:
+    - 6.0
+    - 10.0
+    - 14.0
+  showmanship_horn_enabled: true
+  showmanship_horn_action: circle
+  showmanship_horn_interval_seconds: 45.0
+  showmanship_horn_warmup_seconds: 12.0
+  showmanship_horn_min_road_confidence: 0.68
+  showmanship_horn_max_steer: 0.22
+  showmanship_horn_max_curvature: 0.10
+  showmanship_horn_min_motion: 0.012
+
   # One-shot lifecycle exits.
   results_hold_seconds: 5.0
   replay_hold_seconds: 8.0
