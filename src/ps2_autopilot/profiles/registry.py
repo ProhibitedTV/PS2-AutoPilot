@@ -7,7 +7,7 @@ from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
 from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from .madden2005_v32 import Madden2005V32Profile
-from .nfs_hot_pursuit_2_v5 import NfsHotPursuit2V5Profile
+from .nfs_hot_pursuit_2_v6 import NfsHotPursuit2V6Profile
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,7 @@ def _jak_factory(cfg: dict) -> GameProfile:
 
 
 def _nfs_hp2_factory(cfg: dict) -> GameProfile:
-    return NfsHotPursuit2V5Profile(dict(cfg))
+    return NfsHotPursuit2V6Profile(dict(cfg))
 
 
 PROFILE_SPECS: dict[str, ProfileSpec] = {
@@ -69,9 +69,9 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         name="nfs_hot_pursuit_2",
         display_name="Need for Speed: Hot Pursuit 2",
         template_namespace="nfs_hot_pursuit_2",
-        # V5 adds temporally confirmed traffic avoidance, pass-side latching,
-        # positive-template shortcut ownership and pursuit-racer anti-ram evasion.
-        # Live PCSX2 evidence is still required before maturity can advance.
+        # V6 removes the live-proven indefinite UNKNOWN/calibration deadlock with
+        # bounded progress-aware bootstrap probes and a strong-road fast takeover.
+        # It remains diagnostic until the unattended lifecycle earns a real soak.
         maturity="diagnostic",
         factory=_nfs_hp2_factory,
     ),
