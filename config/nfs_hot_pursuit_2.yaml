@@ -65,6 +65,25 @@ profile:
   menu_max_retries: 1
   menu_escape_takeover_seconds: 2.0
 
+  # V6 24/7 bootstrap/reacquisition. Templates remain authoritative when present,
+  # but UNKNOWN no longer means "do nothing forever". The ladder probes one PS2
+  # input at a time and waits for visual progress before continuing.
+  unattended_bootstrap_enabled: true
+  bootstrap_stable_seconds: 1.25
+  bootstrap_settle_seconds: 0.85
+  bootstrap_progress_timeout_seconds: 2.0
+  bootstrap_progress_delta: 0.028
+  bootstrap_motion_guard: 0.035
+  bootstrap_force_after_seconds: 7.0
+  bootstrap_cycle_pause_seconds: 2.0
+  bootstrap_sequence:
+    - start
+    - down
+    - confirm
+    - confirm
+    - confirm
+    - confirm
+
   # One-shot lifecycle exits.
   results_hold_seconds: 5.0
   replay_hold_seconds: 8.0
@@ -84,6 +103,12 @@ profile:
   race_motion_threshold: 0.006
   road_loss_recovery_seconds: 2.2
   road_grace_seconds: 0.22
+
+  # V6 live-evidence fast path. The first real V5 session produced isolated
+  # 0.89-0.97 road-confidence locks but only reached two race-evidence frames, so a
+  # very strong two-frame road lock can now take racing ownership without templates.
+  strong_road_confidence: 0.82
+  strong_road_enter_frames: 2
 
   # Base steering controller.
   steering_gain: 1.05
