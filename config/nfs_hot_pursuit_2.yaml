@@ -92,6 +92,25 @@ profile:
   fast_takeover_probation_seconds: 1.50
   fast_takeover_min_motion: 0.010
 
+  # V7 fixed-HUD gameplay ownership. Overnight evidence proved the race HUD remains
+  # reliable even when the pavement detector is blind against a wall. Strong fixed
+  # rank/lap/tach geometry can therefore keep the profile in gameplay ownership.
+  hud_gameplay_enabled: true
+  hud_gameplay_threshold: 0.82
+
+  # V8 long-stall rescue. Short crashes still use reverse/forward recovery. Only a
+  # strong HUD-owned stall with poor road vision, near-zero motion, four failed
+  # recovery attempts and at least 28 seconds of persistence may invoke the documented
+  # Pause Menu -> Restart Race fallback. This prevents another eight-hour wall park.
+  hud_stall_motion_threshold: 0.0035
+  hud_stall_reset_motion: 0.020
+  hud_stall_hard_restart_enabled: true
+  hud_stall_hard_restart_recoveries: 4
+  hud_stall_hard_restart_seconds: 28.0
+  hard_restart_action_seconds: 0.75
+  hard_restart_wait_seconds: 7.0
+  hard_restart_progress_delta: 0.025
+
   # One-shot lifecycle exits.
   results_hold_seconds: 5.0
   replay_hold_seconds: 8.0
@@ -114,7 +133,7 @@ profile:
 
   # V6 live-evidence fast path. The first real V5 session produced isolated
   # 0.89-0.97 road-confidence locks but only reached two race-evidence frames, so a
-  # very strong two-frame road lock can take racing ownership without templates.
+  # very strong two-frame road lock can now take racing ownership without templates.
   strong_road_confidence: 0.82
   strong_road_enter_frames: 2
 
