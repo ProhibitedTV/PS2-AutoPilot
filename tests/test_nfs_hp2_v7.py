@@ -36,24 +36,20 @@ class FakeController(Controller):
 def _hud_frame() -> np.ndarray:
     frame = np.full((360, 640, 3), (55, 70, 45), dtype=np.uint8)
 
-    # Upper-left position/rank cluster: dark plate, amber rank and white separators.
     cv2.rectangle(frame, (5, 5), (175, 125), (10, 10, 10), -1)
     cv2.rectangle(frame, (20, 20), (115, 85), (45, 150, 235), -1)
     cv2.line(frame, (10, 100), (170, 100), (220, 220, 220), 4)
     cv2.line(frame, (20, 116), (150, 116), (220, 220, 220), 3)
 
-    # Upper-right lap/current panel with amber text-like bars and bright structure.
     cv2.rectangle(frame, (435, 10), (625, 62), (28, 28, 28), -1)
     for y in (18, 34, 50):
         cv2.line(frame, (450, y), (605, y), (45, 145, 225), 5)
         cv2.line(frame, (520, y + 5), (610, y + 5), (210, 210, 210), 2)
 
-    # Lower-left minimap plate and white route line.
     cv2.rectangle(frame, (10, 130), (175, 220), (10, 10, 10), -1)
     pts = np.array([[25, 205], [55, 165], [95, 190], [150, 145]], dtype=np.int32)
     cv2.polylines(frame, [pts], False, (225, 225, 225), 5)
 
-    # Lower-right tachometer: dark dial, amber/red arc and bright tick marks.
     cv2.rectangle(frame, (485, 200), (630, 330), (8, 8, 8), -1)
     cv2.ellipse(frame, (555, 282), (62, 62), 0, 205, 340, (40, 135, 225), 7)
     cv2.ellipse(frame, (555, 282), (58, 58), 0, 320, 350, (40, 40, 220), 6)
@@ -107,7 +103,9 @@ def test_persistent_hud_road_loss_enters_racing_recovery_not_bootstrap():
     profile = NfsHotPursuit2V7Profile(
         {
             "hud_gameplay_threshold": 0.82,
-            "drive_confidence": 0.95,
+            # Road confidence is bounded to <= 1.0; force the road-loss branch so
+            # this regression tests ownership rather than the synthetic pavement.
+            "drive_confidence": 1.01,
             "road_loss_recovery_seconds": 0.5,
         }
     )
