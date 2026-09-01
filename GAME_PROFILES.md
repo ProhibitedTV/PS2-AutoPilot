@@ -8,7 +8,7 @@ PS2 AutoPilot is a multi-game PCSX2 runtime. Game-specific behavior lives behind
 | --- | --- | --- | --- | --- |
 | `madden2005` | Madden NFL 2005 | `Madden2005V32Profile` | production-candidate | `config/madden2005.yaml` |
 | `jak_and_daxter` | Jak and Daxter: The Precursor Legacy | `JakAndDaxterV22Profile` | production-candidate | `config/jak_and_daxter.yaml` |
-| `nfs_hot_pursuit_2` | Need for Speed: Hot Pursuit 2 | `NfsHotPursuit2V5Profile` | diagnostic | `config/nfs_hot_pursuit_2.yaml` |
+| `nfs_hot_pursuit_2` | Need for Speed: Hot Pursuit 2 | `NfsHotPursuit2V9Profile` | diagnostic | `config/nfs_hot_pursuit_2.yaml` |
 | `generic_chaos` | Generic smoke test | generic | diagnostic | custom |
 
 List the registry at any time:
@@ -81,22 +81,23 @@ ps2-autopilot-jak-acceptance --help
 ps2-autopilot-jak-validation --help
 ```
 
-### Need for Speed: Hot Pursuit 2 — V5
+### Need for Speed: Hot Pursuit 2 — V9
 
-NFS HP2 is the first racing policy and remains deliberately `diagnostic` until real PCSX2 evidence proves unattended lifecycle behavior.
+NFS HP2 is the first racing policy and remains `diagnostic` while the active stack earns unattended lifecycle evidence from real PCSX2 sessions.
 
-V1 established adaptive road-corridor perception, analog steering and bounded recovery. V2 added PS2 menu topology, route planning, replay/pause ownership and You're The Cop controls. V3 added evidence-stable selected-row transactions, predictive steering, coasting and one-shot lifecycle exits. V4 added countdown launch control, Hot Pursuit hazard templates, BUSTED continuation, pursuit-racer ownership and recovery escalation.
+V1 established adaptive road-corridor perception, analog steering and bounded recovery. V2 added PS2 menu topology, route planning, replay/pause ownership and You're The Cop controls. V3 added evidence-stable selected-row transactions, predictive steering, coasting and one-shot lifecycle exits. V4 added countdown launch control, Hot Pursuit hazard templates, BUSTED continuation, pursuit-racer ownership and recovery escalation. V5 added temporally confirmed traffic tracking, shortcut ownership and anti-ram behavior. V6 removed the indefinite UNKNOWN deadlock with progress-aware bootstrap and guarded fast race takeover. V7 used the fixed PS2 race HUD to keep ownership of active gameplay when road segmentation is blind. V8 added repeated wall-stall recovery and a last-resort Restart Race ladder.
 
-V5 adds traffic and route-choice behavior specific to Hot Pursuit 2:
+V9 focuses on smarter continuous racecraft, terminal robustness and 24/7 presentation:
 
-- image-only traffic candidates must persist across spatially consistent frames before they can own steering;
-- confirmed traffic chooses and briefly latches a pass side to reduce left/right weaving;
-- image-only traffic steering remains opt-in while confirmation telemetry is always available;
-- positive directional shortcut templates can commit the car to known track shortcuts;
-- shortcut steering preserves the predictive throttle/coast/brake controller;
-- roadblocks, police attacks and confirmed traffic preempt shortcut commitment;
-- Hot Pursuit racer anti-ram templates evade away from a known police attack side;
-- expanded traffic-track, shortcut and pursuit-evasion telemetry supports live calibration.
+- strong fixed-HUD gameplay can extend the last coherent road solution through short moving texture/shadow dropouts without allowing a stationary wall trap to inherit stale road;
+- the first wall-recovery attempts use the most recent road-center direction so the forward half of the escape points back toward the course;
+- later failed attempts retain V4/V8 alternating-side escalation rather than trusting stale geometry forever;
+- Restart Race success is now acknowledged only from visual change *after* restart confirmation, so opening the Pause menu cannot count as a successful restart;
+- repeated failed Restart Race attempts can escalate to the documented Pause -> Quit Race path, returning control to the unattended menu lifecycle instead of leaving a poisoned race state parked forever;
+- replay presentation cycles through several bounded hold times rather than using the same cadence every race;
+- racer modes may issue an occasional horn flourish only on a clean, well-observed straight; cop mode is excluded because Circle has pursuit semantics there;
+- camera switching remains disabled because changing the chase camera would invalidate the road/HUD geometry that the driving stack depends on;
+- image-only traffic steering remains opt-in pending live false-positive evidence; positive directional roadblock/shortcut/police templates still have higher-confidence ownership.
 
 Live gates are tracked in issue #129. See:
 
@@ -106,6 +107,9 @@ NFS_HP2_V2.md
 NFS_HP2_V3.md
 NFS_HP2_V4.md
 NFS_HP2_V5.md
+NFS_HP2_V7.md
+NFS_HP2_V8.md
+NFS_HP2_V9.md
 ```
 
 ## Why these policies stay separate
