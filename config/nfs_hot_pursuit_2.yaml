@@ -3,6 +3,12 @@ loop_hz: 12
 
 performance:
   opencv_threads: 2
+  # Full-resolution matching across the local template library took ~600 ms in the
+  # first live NFS session, reducing a nominal 12 Hz controller to ~1.5 Hz. Keep one
+  # latest-frame scan off the control thread and reject results that become stale.
+  template_matching_async: true
+  template_scan_interval_seconds: 0.10
+  template_result_max_age_seconds: 1.25
 
 controller:
   backend: virtual_gamepad

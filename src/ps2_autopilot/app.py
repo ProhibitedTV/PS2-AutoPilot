@@ -110,7 +110,14 @@ class AutopilotApp:
         self.profile_spec = get_profile_spec(requested_name)
         self.profile = build_profile(profile_cfg)
         self.detector = TemplateDetector(
-            project_root / "profiles" / self.profile_spec.template_namespace / "templates"
+            project_root / "profiles" / self.profile_spec.template_namespace / "templates",
+            asynchronous=bool(performance_cfg.get("template_matching_async", False)),
+            scan_interval_seconds=float(
+                performance_cfg.get("template_scan_interval_seconds", 0.10)
+            ),
+            result_max_age_seconds=float(
+                performance_cfg.get("template_result_max_age_seconds", 1.25)
+            ),
         )
 
         # Optional read-only semantic side channel. The bridge is intentionally
@@ -190,7 +197,9 @@ class AutopilotApp:
                 motion = motion_score(previous, current_frame)
                 previous_for_ctx = previous
                 previous = current_frame
+                template_started = time.perf_counter()
                 template = self.detector.best_match(current_frame)
+                template_call_ms = (time.perf_counter() - template_started) * 1000.0
                 status = self.watchdog.update(motion)
                 semantic = self.semantic_bridge.poll(started)
                 performance = self.loop_health.snapshot(budget_ms).as_dict()
@@ -235,11 +244,13 @@ class AutopilotApp:
                     "action": action,
                     "timestamp": time.time(),
                     "capture_ms": round(capture_ms, 2),
+                    "template_call_ms": round(template_call_ms, 2),
                     "policy_ms": round(policy_ms, 2),
                     "last_loop_ms": round(self._last_loop_ms, 2),
                     "loop_budget_ms": round(budget_ms, 2),
                     "loop_overruns": self._loop_overruns,
                     "opencv_threads": self.opencv_threads,
+                    **self.detector.telemetry(),
                     **performance,
                     **semantic,
                 }
@@ -295,6 +306,7 @@ class AutopilotApp:
             raise
         finally:
             self.controller.release_all()
+            self.detector.close()
             self.semantic_bridge.close()
             if self.overlay:
                 self.overlay.write_state(
