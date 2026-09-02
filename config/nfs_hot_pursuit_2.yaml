@@ -142,6 +142,14 @@ profile:
   hard_quit_progress_delta: 0.025
   hard_quit_cooldown_seconds: 30.0
 
+  # V10 liveness circuit breaker. The overnight V9 run accumulated 2,160 bounded
+  # recoveries in one race because camera wiggle repeatedly reset the near-zero-motion
+  # stall detector. Eight HUD-owned recovery starts inside two minutes now invoke the
+  # existing verified Restart Race ladder regardless of those transient resets.
+  recovery_storm_enabled: true
+  recovery_storm_window_seconds: 120.0
+  recovery_storm_limit: 8
+
   # V9 broadcast pacing/showmanship. Replay holds cycle so every race does not have
   # identical presentation timing. Racer modes may make an occasional horn flourish
   # only on a clean, well-observed straight. Cop mode is excluded because Circle has
@@ -159,6 +167,9 @@ profile:
   showmanship_horn_max_steer: 0.22
   showmanship_horn_max_curvature: 0.10
   showmanship_horn_min_motion: 0.012
+  # A horn flourish is entertainment, never evidence of health. Suppress it until
+  # the controller has completed a full quiet minute without starting a recovery.
+  showmanship_recovery_quiet_seconds: 60.0
 
   # One-shot lifecycle exits.
   results_hold_seconds: 5.0

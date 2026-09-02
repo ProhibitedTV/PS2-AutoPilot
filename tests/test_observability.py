@@ -111,6 +111,47 @@ def test_recovery_counter_creates_failure_bundle(tmp_path):
     assert "menu-transition-failure" in payload["reason"]
 
 
+def test_nfs_recovery_storm_creates_rich_failure_bundle(tmp_path):
+    observer = RuntimeObserver(
+        {"console": False, "failure_bundle_cooldown_seconds": 1.0},
+        tmp_path,
+    )
+    frame = np.zeros((80, 120, 3), dtype=np.uint8)
+    now = time.monotonic()
+    base = {
+        "nfs_policy_version": 10,
+        "nfs_phase": "racing",
+        "nfs_race_entries": 1,
+        "nfs_verified_race_entries": 1,
+        "nfs_gameplay_reacquisitions": 12,
+        "nfs_recovery_storm_count": 7,
+        "nfs_recovery_storm_limit": 8,
+        "nfs_recovery_storm_triggers": 0,
+        "nfs_hard_restart_attempts": 0,
+        "nfs_hard_quit_attempts": 0,
+        "loop_p95_ms": 89.4,
+        "template_scan_ms": 1180.0,
+    }
+    observer.record_cycle(1, frame, None, base, "racing: recover", now)
+    failed = dict(base)
+    failed.update(
+        {
+            "nfs_recovery_storm_count": 8,
+            "nfs_recovery_storm_triggers": 1,
+            "nfs_hard_restart_attempts": 1,
+        }
+    )
+    observer.record_cycle(2, frame, frame, failed, "hard restart: pause", now + 2.0)
+
+    bundles = [path for path in (tmp_path / "failures").iterdir() if path.is_dir()]
+    assert len(bundles) == 1
+    payload = json.loads((bundles[0] / "state.json").read_text())
+    assert "nfs-recovery-storm" in payload["reason"]
+    assert "nfs-hard-restart" in payload["reason"]
+    assert payload["state"]["nfs_gameplay_reacquisitions"] == 12
+    assert payload["state"]["loop_p95_ms"] == 89.4
+
+
 def test_summary_reads_session_and_runtime_logs(tmp_path):
     (tmp_path / "session.json").write_text(
         json.dumps(

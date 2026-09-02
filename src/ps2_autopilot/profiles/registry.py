@@ -7,7 +7,7 @@ from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
 from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from .madden2005_v32 import Madden2005V32Profile
-from .nfs_hot_pursuit_2_v9 import NfsHotPursuit2V9Profile
+from .nfs_hot_pursuit_2_v10 import NfsHotPursuit2V10Profile
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,7 @@ def _jak_factory(cfg: dict) -> GameProfile:
 
 
 def _nfs_hp2_factory(cfg: dict) -> GameProfile:
-    return NfsHotPursuit2V9Profile(dict(cfg))
+    return NfsHotPursuit2V10Profile(dict(cfg))
 
 
 PROFILE_SPECS: dict[str, ProfileSpec] = {
@@ -69,8 +69,8 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         name="nfs_hot_pursuit_2",
         display_name="Need for Speed: Hot Pursuit 2",
         template_namespace="nfs_hot_pursuit_2",
-        # V9 adds HUD-backed road memory, center-guided wall recovery, verified
-        # restart progress, Quit Race escalation and bounded broadcast showmanship.
+        # V10 adds a rolling recovery-storm circuit breaker, honest race-launch
+        # accounting and recovery-aware showmanship to the V9 racecraft stack.
         # Keep diagnostic until the active unattended stack earns a fresh soak.
         maturity="diagnostic",
         factory=_nfs_hp2_factory,
