@@ -152,6 +152,36 @@ def test_nfs_recovery_storm_creates_rich_failure_bundle(tmp_path):
     assert payload["state"]["loop_p95_ms"] == 89.4
 
 
+def test_nfs_v11_blind_restart_captures_road_rejection_geometry(tmp_path):
+    observer = RuntimeObserver(
+        {"console": False, "failure_bundle_cooldown_seconds": 1.0},
+        tmp_path,
+    )
+    frame = np.zeros((80, 120, 3), dtype=np.uint8)
+    now = time.monotonic()
+    base = {
+        "nfs_policy_version": 11,
+        "nfs_blind_moving_restarts": 0,
+        "nfs_wrong_way_restarts": 0,
+        "nfs_road_confidence": 0.0,
+        "nfs_road_rejection_reason": "reverse-perspective",
+        "nfs_road_width": 0.31,
+        "nfs_road_coverage": 0.54,
+        "nfs_road_center_contact": 0.42,
+    }
+    observer.record_cycle(1, frame, None, base, "moving-blind", now)
+    failed = dict(base)
+    failed["nfs_blind_moving_restarts"] = 1
+    observer.record_cycle(2, frame, frame, failed, "hard restart", now + 2.0)
+
+    bundles = [path for path in (tmp_path / "failures").iterdir() if path.is_dir()]
+    assert len(bundles) == 1
+    payload = json.loads((bundles[0] / "state.json").read_text())
+    assert "nfs-moving-blind-restart" in payload["reason"]
+    assert payload["state"]["nfs_road_rejection_reason"] == "reverse-perspective"
+    assert payload["state"]["nfs_road_width"] == 0.31
+
+
 def test_summary_reads_session_and_runtime_logs(tmp_path):
     (tmp_path / "session.json").write_text(
         json.dumps(

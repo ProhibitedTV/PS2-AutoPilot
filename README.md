@@ -4,7 +4,7 @@
 
 PS2 AutoPilot captures the active PCSX2 render, interprets game-specific visual state, drives a virtual controller, records evidence for unattended failures, and publishes a lightweight state feed for OBS. Shared infrastructure handles capture, supervision, logging, retention, controller I/O, optional read-only emulator telemetry, acceptance tooling, and overlays; each game owns its own perception and policy stack.
 
-> Current package release: **v0.9.1**
+> Current package release: **v0.11.0**
 
 ## Game status
 
@@ -12,6 +12,7 @@ PS2 AutoPilot captures the active PCSX2 render, interprets game-specific visual 
 | --- | --- | --- | --- |
 | `madden2005` | Madden NFL 2005 | `Madden2005V24Profile` | production-candidate |
 | `jak_and_daxter` | Jak and Daxter: The Precursor Legacy | `JakAndDaxterV22Profile` | production-candidate |
+| `nfs_hot_pursuit_2` | Need for Speed: Hot Pursuit 2 | `NfsHotPursuit2V11Profile` | live-candidate |
 | `generic_chaos` | Generic controller/capture smoke test | generic | diagnostic |
 
 Madden and Jak are deliberately isolated. Shared runtime plumbing is reused; football assumptions never leak into the platformer policy.
@@ -147,6 +148,7 @@ Static validation can run **before PCSX2 starts**:
 ```bat
 ps2-autopilot-doctor --config config\madden2005.yaml --config-only
 ps2-autopilot-doctor --config config\jak_and_daxter.yaml --config-only
+ps2-autopilot-doctor --config config\nfs_hot_pursuit_2.yaml --config-only
 ```
 
 Static preflight checks the registered profile, controller backend, supervisor configuration, and—when emulator relaunch is enabled—the configured launcher working directory and executable/PATH resolution.
@@ -156,6 +158,7 @@ After PCSX2 is running, use the full live doctor:
 ```bat
 ps2-autopilot-doctor --config config\madden2005.yaml
 ps2-autopilot-doctor --config config\jak_and_daxter.yaml
+ps2-autopilot-doctor --config config\nfs_hot_pursuit_2.yaml
 ```
 
 The full doctor adds Windows runtime, render-window discovery, frame capture, controller dependency and game-specific live probes.
@@ -191,6 +194,22 @@ Dedicated supervised wrapper:
 ```bat
 run-jak24x7.cmd
 ```
+
+### Need for Speed: Hot Pursuit 2
+
+Start PCSX2, load the game, and leave the game window visible. V11 uses normalized
+frame geometry, so a 1920x1080 desktop is supported without a pixel calibration.
+
+Dedicated supervised wrapper:
+
+```bat
+run-nfs24x7.cmd
+```
+
+For the first V11 validation, watch one race start and confirm that the console says
+`nfs_policy_version: 11` in state telemetry before leaving it unattended. The policy
+now rejects car/wall-shaped road masks and restarts persistent moving-blind gameplay
+instead of chaining blind reverse maneuvers.
 
 `Ctrl+C` and `runtime/STOP24X7` are intentional clean stops.
 
