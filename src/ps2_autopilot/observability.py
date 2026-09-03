@@ -270,6 +270,7 @@ class RuntimeObserver:
             "nfs_recovery_storm_limit",
             "nfs_recovery_storm_triggers",
             "nfs_launch_guard_ticks",
+            "nfs_launch_guard_vision_ticks",
             "nfs_racing_steer_clamps",
             "nfs_blind_moving_age",
             "nfs_blind_moving_ticks",

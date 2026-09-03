@@ -72,6 +72,42 @@ def test_launch_guard_holds_throttle_and_caps_first_frame_steering():
     assert profile.launch_guard_ticks == 1
 
 
+def test_launch_guard_steers_into_live_recorded_bend_without_braking():
+    profile = NfsHotPursuit2V11Profile(
+        {"launch_guard_seconds": 4.0, "launch_guard_max_steer": 0.36}
+    )
+    controller = FakeController()
+    _racing(profile, since=10.0)
+    # Geometry retained immediately before the first V11.0 off-course event. V11.0
+    # logged this -0.47 bend for eleven ticks while commanding steer=+0.00.
+    profile.road = RoadObservation(0.74, 0.05, -0.469, 0.964, 0.645, 0.45)
+
+    for tick in range(11):
+        action = profile._drive(controller, _ctx(now=12.0 + tick / 12.0))
+
+    assert "throttle/vision" in action
+    assert -profile.launch_guard_max_steer <= profile.last_steer < -0.10
+    assert controller.left_stick == (profile.last_steer, 0.0)
+    assert ("hold", "cross") in controller.events
+    assert not any(event[0] == "tap" and event[1] == "square" for event in controller.events)
+    assert profile.launch_guard_vision_ticks == 11
+
+
+def test_restart_clears_stale_launch_prediction_and_steering():
+    profile = NfsHotPursuit2V11Profile({})
+    profile.last_steer = 0.55
+    profile.last_prediction_at = 20.0
+    profile.center_rate = 2.0
+    profile.curvature_rate = -2.0
+
+    profile._finish_hard_restart(_ctx(now=22.0), progressed=True)
+
+    assert profile.last_steer == 0.0
+    assert profile.last_prediction_at < -1e8
+    assert profile.center_rate == 0.0
+    assert profile.curvature_rate == 0.0
+
+
 def test_moving_blind_drives_forward_then_restarts_without_reversing():
     profile = NfsHotPursuit2V11Profile(
         {
@@ -143,6 +179,7 @@ def test_v11_telemetry_exposes_road_rejection_and_safety_state():
     assert state["nfs_road_rejection_reason"] == "overwide-surface"
     assert state["nfs_blind_moving_age"] == 2.5
     assert state["nfs_blind_moving_ticks"] == 12
+    assert state["nfs_launch_guard_vision_ticks"] == 0
 
 
 def test_unknown_road_takeover_requires_fixed_gameplay_hud():
