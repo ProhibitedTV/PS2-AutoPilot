@@ -8,6 +8,12 @@ stick at zero even after coherent vision reported a sustained bend. Launches now
 the normal predictive steering geometry with a strict ±0.36 cap while continuing to
 hold throttle and suppress all launch braking.
 
+V11.2 adds strict ownership for the alternate You're The Cop HUD. The first V11.1
+follow-up reached a timed police pursuit, but the missing racer rank panel reduced HUD
+confidence to 0.32 and left the car parked while unknown-screen bootstrap pressed
+menu buttons. The fixed neon-green police-resource row now identifies that layout,
+promotes it to `cop_racing`, and hands it to normal drive/recovery control.
+
 ## What the stopped V10 run proved
 
 - The 12 Hz control loop remained responsive: the prior asynchronous template fix
@@ -26,6 +32,7 @@ hold throttle and suppress all launch braking.
 - Raw rejected width, coverage, and center-contact geometry remains in failure
   bundles for the next tuning pass.
 - Unknown-screen road color cannot claim a race without fixed HUD ownership.
+- Racer and You're The Cop HUD layouts both provide fixed gameplay ownership.
 - The first four race seconds hold throttle and cap steering.
 - Moving gameplay with blind road vision stays forward, rapidly decays steering,
   and requests Restart Race after seven seconds.
@@ -42,7 +49,7 @@ hold throttle and suppress all launch braking.
 3. Start PCSX2 and load Need for Speed: Hot Pursuit 2.
 4. Run `ps2-autopilot-doctor --config config\nfs_hot_pursuit_2.yaml`.
 5. Run `run-nfs24x7.cmd`.
-6. Confirm state telemetry reports package `0.11.1` and NFS policy `11`.
+6. Confirm state telemetry reports package `0.11.2` and NFS policy `11`.
 7. Observe one launch. It should accelerate immediately with bounded steering. If
    road vision is rejected while the race HUD remains present, the console should
    report `v11 moving-blind`, followed by one bounded restart if blindness persists.
