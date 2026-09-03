@@ -76,6 +76,55 @@ def test_road_estimator_rejects_flat_menu_like_frame():
     frame = np.full((360, 640, 3), 90, dtype=np.uint8)
     road = estimate_road(frame)
     assert road.confidence == 0.0
+    assert road.rejection_reason == "overwide-surface"
+
+
+def test_road_estimator_rejects_reverse_perspective_wall_surface():
+    frame = np.zeros((360, 640, 3), dtype=np.uint8)
+    frame[:] = (45, 125, 45)
+    # This reproduces the overnight failure geometry: a selected surface occupies
+    # the whole look-ahead band but collapses to the bottom-right near the car.
+    false_corridor = np.array([[0, 150], [640, 150], [620, 350], [450, 350]], dtype=np.int32)
+    cv2.fillConvexPoly(frame, false_corridor, (92, 92, 92))
+
+    road = estimate_road(frame)
+
+    assert road.confidence == 0.0
+    assert road.rejection_reason == "reverse-perspective"
+
+
+def test_road_estimator_masks_chase_car_without_losing_road():
+    frame = _road_frame()
+    # A bright chase car occupies the old lower-center seed and anchor region.
+    car = np.array([[290, 220], [350, 220], [415, 345], [225, 345]], dtype=np.int32)
+    cv2.fillConvexPoly(frame, car, (205, 205, 205))
+
+    road = estimate_road(frame)
+
+    assert road.confidence > 0.45
+    assert abs(road.center_x) < 0.18
+    assert road.rejection_reason is None
+
+
+def test_road_estimator_is_resolution_independent_at_1080p():
+    low_resolution = estimate_road(_road_frame(curve_right=True))
+    frame_1080p = cv2.resize(_road_frame(curve_right=True), (1920, 1080))
+
+    road_1080p = estimate_road(frame_1080p)
+
+    assert road_1080p.confidence > 0.45
+    assert road_1080p.curvature > 0.10
+    assert abs(road_1080p.center_x - low_resolution.center_x) < 0.04
+
+
+def test_rejected_surface_preserves_geometry_for_failure_telemetry():
+    frame = np.full((360, 640, 3), 90, dtype=np.uint8)
+
+    road = estimate_road(frame)
+
+    assert road.rejection_reason == "overwide-surface"
+    assert road.coverage > 0.68
+    assert road.width > 0.50
 
 
 def test_profile_can_take_over_after_manual_race_entry():

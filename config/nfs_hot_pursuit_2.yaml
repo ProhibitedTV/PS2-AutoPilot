@@ -150,6 +150,18 @@ profile:
   recovery_storm_window_seconds: 120.0
   recovery_storm_limit: 8
 
+  # V11 chase-camera safety. The road estimator now samples above the vehicle and
+  # rejects overwide/reverse-perspective regions. During the remaining uncertainty,
+  # launch steering is bounded and moving gameplay continues straight instead of
+  # entering repeated blind reverse maneuvers. A persistent blind scene restarts.
+  launch_guard_seconds: 4.0
+  launch_guard_max_steer: 0.36
+  racing_max_steer: 0.62
+  blind_motion_threshold: 0.012
+  blind_steer_decay: 0.78
+  blind_max_steer: 0.22
+  blind_restart_seconds: 7.0
+
   # V9 broadcast pacing/showmanship. Replay holds cycle so every race does not have
   # identical presentation timing. Racer modes may make an occasional horn flourish
   # only on a clean, well-observed straight. Cop mode is excluded because Circle has

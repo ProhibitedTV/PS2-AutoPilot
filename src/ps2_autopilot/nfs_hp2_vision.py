@@ -16,10 +16,11 @@ class RoadObservation:
     width: float
     coverage: float
     center_contact: float
+    rejection_reason: str | None = None
 
     @classmethod
-    def unavailable(cls) -> "RoadObservation":
-        return cls(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    def unavailable(cls, reason: str | None = None) -> "RoadObservation":
+        return cls(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, reason)
 
 
 def _clamp(value: float, low: float = -1.0, high: float = 1.0) -> float:
@@ -51,7 +52,7 @@ def estimate_road(
 
     Hot Pursuit 2 usually keeps the player's car on a visually coherent road surface.
     Instead of relying on a track-specific color, this detector samples the pavement
-    currently beneath/ahead of the car, finds the connected region with the strongest
+    currently ahead of the car, finds the connected region with the strongest
     bottom-center contact, then measures that corridor at several look-ahead bands.
 
     The method is deliberately calibration-friendly: it is fast, uses only OpenCV and
@@ -79,12 +80,15 @@ def estimate_road(
 
     lab = cv2.cvtColor(roi, cv2.COLOR_BGR2LAB).astype(np.float32)
 
-    # Sample a broad central patch ahead of the car rather than the very bottom,
-    # where the vehicle body/HUD can dominate the image.
+    # Sample the pavement *ahead* of the car. The original 0.62-0.78 ROI band maps
+    # to roughly 74-82% of a 1080p frame: exactly where HP2 draws the player's rear
+    # body in chase camera. In the first live V10 run that made the detector segment
+    # the silver Porsche, retaining walls and shoulders as one high-confidence road.
+    # This patch maps to roughly 52-60% of the full frame and stays above the car.
     sx0 = int(rw * 0.43)
     sx1 = max(sx0 + 4, int(rw * 0.57))
-    sy0 = int(rh * 0.62)
-    sy1 = max(sy0 + 4, int(rh * 0.78))
+    sy0 = int(rh * 0.18)
+    sy1 = max(sy0 + 4, int(rh * 0.34))
     seed = lab[sy0:sy1, sx0:sx1]
     if seed.size == 0:
         return RoadObservation.unavailable()
@@ -101,12 +105,29 @@ def estimate_road(
     candidate = cv2.morphologyEx(candidate, cv2.MORPH_CLOSE, kernel_close, iterations=2)
     candidate = cv2.morphologyEx(candidate, cv2.MORPH_OPEN, kernel_open, iterations=1)
 
+    # Even a correct pavement seed may include similarly colored bodywork. Mask the
+    # resolution-independent chase-car envelope before connected-component scoring.
+    # The narrow top and wider bottom preserve road pixels beside/behind the car and
+    # deliberately avoid assuming a specific 1080p pixel size.
+    vehicle_mask = np.array(
+        [
+            [int(rw * 0.46), int(rh * 0.33)],
+            [int(rw * 0.54), int(rh * 0.33)],
+            [int(rw * 0.68), int(rh * 0.98)],
+            [int(rw * 0.32), int(rh * 0.98)],
+        ],
+        dtype=np.int32,
+    )
+    cv2.fillConvexPoly(candidate, vehicle_mask, 0)
+
     count, labels, stats, _ = cv2.connectedComponentsWithStats(candidate, connectivity=8)
     if count <= 1:
         return RoadObservation.unavailable()
 
-    ax0 = int(rw * 0.34)
-    ax1 = max(ax0 + 1, int(rw * 0.66))
+    # Use the road shoulders beside the masked car as the near-field anchor. A
+    # central anchor rewarded the vehicle body with perfect contact in V10.
+    ax0 = int(rw * 0.20)
+    ax1 = max(ax0 + 1, int(rw * 0.80))
     ay0 = int(rh * 0.70)
     anchor = labels[ay0:, ax0:ax1]
     anchor_area = max(1, anchor.size)
@@ -128,24 +149,56 @@ def estimate_road(
             best_contact = contact
 
     if best_label == 0 or best_contact < 0.035:
-        return RoadObservation.unavailable()
+        return RoadObservation.unavailable("no-near-corridor")
 
     road = labels == best_label
     coverage = float(np.mean(road))
+    near_measurement = _band_center(road, 0.88)
+    raw_near_width = 0.0 if near_measurement is None else near_measurement[1]
+
+    def rejected(reason: str) -> RoadObservation:
+        # Keep raw geometry in telemetry even when confidence fails closed. These
+        # fields made the V10 1080p false positive diagnosable after the fact.
+        return RoadObservation(
+            confidence=0.0,
+            center_x=0.0,
+            curvature=0.0,
+            width=_clamp(raw_near_width, 0.0, 1.0),
+            coverage=_clamp(coverage, 0.0, 1.0),
+            center_contact=_clamp(best_contact, 0.0, 1.0),
+            rejection_reason=reason,
+        )
+
     # A flat loading/menu/solid-color frame can perfectly match its own seed and
     # otherwise masquerade as a giant road. Chase-camera pavement should leave a
     # meaningful amount of non-road scene visible, so reject near-full-frame masks.
-    if coverage > 0.84:
-        return RoadObservation.unavailable()
+    if coverage > 0.68:
+        return rejected("overwide-surface")
 
-    samples: list[tuple[float, float, float]] = []
-    for fraction, weight in ((0.28, 0.34), (0.46, 0.30), (0.66, 0.22), (0.84, 0.14)):
+    samples: list[tuple[float, float, float, float]] = []
+    for fraction, weight in (
+        (0.20, 0.30),
+        (0.36, 0.26),
+        (0.54, 0.20),
+        (0.72, 0.14),
+        (0.88, 0.10),
+    ):
         measured = _band_center(road, fraction)
         if measured is not None:
-            samples.append((measured[0], measured[1], weight))
+            samples.append((measured[0], measured[1], weight, fraction))
 
-    if len(samples) < 2:
-        return RoadObservation.unavailable()
+    if len(samples) < 3 or samples[0][3] > 0.54 or samples[-1][3] < 0.70:
+        return rejected("insufficient-corridor-bands")
+
+    far_width = samples[0][1]
+    near_width = samples[-1][1]
+    # A chase-camera road expands toward the player. The overnight wall trap did
+    # the opposite: its selected component occupied the entire horizon, then shrank
+    # to a thin strip at the bottom-right. Reject that impossible perspective.
+    if near_width + 0.05 < far_width * 0.85:
+        return rejected("reverse-perspective")
+    if near_width < 0.22:
+        return rejected("narrow-near-corridor")
 
     weight_sum = sum(item[2] for item in samples)
     center_x = sum(item[0] * item[2] for item in samples) / max(1e-6, weight_sum)
@@ -153,9 +206,7 @@ def estimate_road(
     far = samples[0][0]
     near = samples[-1][0]
     curvature = _clamp(far - near)
-    near_width = samples[-1][1]
-
-    band_score = len(samples) / 4.0
+    band_score = len(samples) / 5.0
     coverage_score = min(1.0, coverage / 0.34)
     contact_score = min(1.0, best_contact / 0.34)
     width_score = min(1.0, near_width / 0.45)
@@ -165,13 +216,15 @@ def estimate_road(
     centers = [item[0] for item in samples]
     jumps = [abs(b - a) for a, b in zip(centers, centers[1:])]
     continuity = 1.0 - min(1.0, (sum(jumps) / max(1, len(jumps))) / 0.70)
+    perspective = min(1.0, max(0.0, near_width / max(0.05, far_width) - 0.75) / 0.75)
 
     confidence = (
-        0.28 * band_score
-        + 0.24 * coverage_score
-        + 0.26 * contact_score
+        0.24 * band_score
+        + 0.20 * coverage_score
+        + 0.22 * contact_score
         + 0.10 * width_score
-        + 0.12 * continuity
+        + 0.14 * continuity
+        + 0.10 * perspective
     )
 
     return RoadObservation(
@@ -181,4 +234,5 @@ def estimate_road(
         width=_clamp(near_width, 0.0, 1.0),
         coverage=_clamp(coverage, 0.0, 1.0),
         center_contact=_clamp(best_contact, 0.0, 1.0),
+        rejection_reason=None,
     )
