@@ -152,8 +152,9 @@ profile:
 
   # V11 chase-camera safety. The road estimator now samples above the vehicle and
   # rejects overwide/reverse-perspective regions. During the remaining uncertainty,
-  # launch steering is bounded and moving gameplay continues straight instead of
-  # entering repeated blind reverse maneuvers. A persistent blind scene restarts.
+  # launch steering follows coherent corridor geometry at bounded authority (without
+  # first-frame braking), and moving gameplay continues straight instead of entering
+  # repeated blind reverse maneuvers. A persistent blind scene restarts.
   launch_guard_seconds: 4.0
   launch_guard_max_steer: 0.36
   racing_max_steer: 0.62

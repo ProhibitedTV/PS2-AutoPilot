@@ -3,6 +3,11 @@
 V11 is the 1080p chase-camera safety release. It addresses the live failure where
 the racer fell behind, lost the course, and alternated between walls.
 
+V11.1 corrects the first live V11 regression: the four-second launch guard held the
+stick at zero even after coherent vision reported a sustained bend. Launches now use
+the normal predictive steering geometry with a strict ±0.36 cap while continuing to
+hold throttle and suppress all launch braking.
+
 ## What the stopped V10 run proved
 
 - The 12 Hz control loop remained responsive: the prior asynchronous template fix
@@ -37,7 +42,7 @@ the racer fell behind, lost the course, and alternated between walls.
 3. Start PCSX2 and load Need for Speed: Hot Pursuit 2.
 4. Run `ps2-autopilot-doctor --config config\nfs_hot_pursuit_2.yaml`.
 5. Run `run-nfs24x7.cmd`.
-6. Confirm state telemetry reports package `0.11.0` and NFS policy `11`.
+6. Confirm state telemetry reports package `0.11.1` and NFS policy `11`.
 7. Observe one launch. It should accelerate immediately with bounded steering. If
    road vision is rejected while the race HUD remains present, the console should
    report `v11 moving-blind`, followed by one bounded restart if blindness persists.

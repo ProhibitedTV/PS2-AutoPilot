@@ -4,7 +4,7 @@
 
 PS2 AutoPilot captures the active PCSX2 render, interprets game-specific visual state, drives a virtual controller, records evidence for unattended failures, and publishes a lightweight state feed for OBS. Shared infrastructure handles capture, supervision, logging, retention, controller I/O, optional read-only emulator telemetry, acceptance tooling, and overlays; each game owns its own perception and policy stack.
 
-> Current package release: **v0.11.0**
+> Current package release: **v0.11.1**
 
 ## Game status
 

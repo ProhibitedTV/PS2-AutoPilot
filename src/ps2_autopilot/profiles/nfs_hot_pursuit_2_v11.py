@@ -57,6 +57,7 @@ class NfsHotPursuit2V11Profile(NfsHotPursuit2V10Profile):
         self.blind_moving_ticks = 0
         self.blind_moving_restarts = 0
         self.launch_guard_ticks = 0
+        self.launch_guard_vision_ticks = 0
         self.racing_steer_clamps = 0
         self.wrong_way_restarts = 0
         self.fast_takeover_hud_blocks = 0
@@ -93,15 +94,50 @@ class NfsHotPursuit2V11Profile(NfsHotPursuit2V10Profile):
         controller.set_left_stick(bounded, 0.0)
         return bounded
 
+    def _launch_vision_steer(self, controller: Controller, ctx: ProfileContext) -> tuple[float, str]:
+        if self.road.confidence < self.drive_confidence:
+            # Countdown/loading frames do not own steering. Remove any stale input
+            # left by the previous race while waiting for a coherent corridor.
+            self.last_steer *= self.blind_steer_decay
+            return self._bounded_steer(controller, self.launch_guard_max_steer), "blind"
+
+        # V11.0 kept the stick at its initial zero for the entire four-second launch
+        # guard. The first live V11 race reported a sustained -0.47 bend while the
+        # car drove straight into the grass. Reuse the proven V3 prediction/gain path
+        # here, but keep launch authority bounded and never invoke coast/brake logic.
+        self._update_prediction(ctx)
+        center = self.predicted_center_x
+        edge_over = max(0.0, abs(center) - self.edge_correction_start)
+        if edge_over > 0.0:
+            center += (1.0 if center > 0.0 else -1.0) * edge_over * self.edge_correction_gain
+            center = self._clamp(center)
+            self.edge_corrections += 1
+
+        raw = self._clamp(
+            self.steering_gain * center + self.curvature_gain * self.predicted_curvature,
+            self.launch_guard_max_steer,
+        )
+        if self.last_steer * raw < -0.04 and abs(raw - self.last_steer) >= self.oscillation_delta:
+            raw *= self.oscillation_damping
+            self.oscillation_damps += 1
+
+        alpha = 1.0 - self.steering_smoothing
+        self.last_steer = self._clamp(
+            self.last_steer * self.steering_smoothing + raw * alpha,
+            self.launch_guard_max_steer,
+        )
+        self.launch_guard_vision_ticks += 1
+        return self._bounded_steer(controller, self.launch_guard_max_steer), "vision"
+
     def _launch_guard(self, controller: Controller, ctx: ProfileContext) -> str:
         self.blind_moving_since = None
         controller.release(self.brake_action)
         controller.hold(self.accelerate_action)
-        steer = self._bounded_steer(controller, self.launch_guard_max_steer)
+        steer, source = self._launch_vision_steer(controller, ctx)
         self.road_lost_since = None
         self.launch_guard_ticks += 1
         return (
-            f"v11 launch guard: throttle steer={steer:+.2f} "
+            f"v11 launch guard: throttle/{source} steer={steer:+.2f} "
             f"road={self.road.confidence:.2f}"
         )
 
@@ -147,6 +183,10 @@ class NfsHotPursuit2V11Profile(NfsHotPursuit2V10Profile):
 
     def _finish_hard_restart(self, ctx: ProfileContext, *, progressed: bool) -> str:
         self.blind_moving_since = None
+        self.last_steer = 0.0
+        self.last_prediction_at = -1e9
+        self.center_rate = 0.0
+        self.curvature_rate = 0.0
         return super()._finish_hard_restart(ctx, progressed=progressed)
 
     def _drive(self, controller: Controller, ctx: ProfileContext) -> str:
@@ -180,6 +220,7 @@ class NfsHotPursuit2V11Profile(NfsHotPursuit2V10Profile):
                 "nfs_road_rejection_reason": self.road.rejection_reason,
                 "nfs_launch_guard_seconds": round(self.launch_guard_seconds, 2),
                 "nfs_launch_guard_ticks": self.launch_guard_ticks,
+                "nfs_launch_guard_vision_ticks": self.launch_guard_vision_ticks,
                 "nfs_racing_max_steer": round(self.racing_max_steer, 2),
                 "nfs_racing_steer_clamps": self.racing_steer_clamps,
                 "nfs_blind_moving_age": blind_age,
