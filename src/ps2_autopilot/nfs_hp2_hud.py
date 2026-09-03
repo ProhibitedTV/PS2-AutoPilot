@@ -13,6 +13,9 @@ class GameplayHudObservation:
     status_score: float
     tach_score: float
     map_score: float
+    pursuit_score: float = 0.0
+    pursuit_icon_score: float = 0.0
+    layout: str = "unknown"
 
     @classmethod
     def unavailable(cls) -> "GameplayHudObservation":
@@ -55,6 +58,21 @@ def _region_stats(region: np.ndarray) -> tuple[float, float, float, float, float
     dark = float(np.mean(hsv[..., 2] < 70))
     edge = float(np.mean(edges > 0))
     return white, amber, red, dark, edge
+
+
+def _pursuit_icon_score(region: np.ndarray) -> float:
+    """Score the fixed neon-green police resource row in You're The Cop mode."""
+
+    if region.size == 0:
+        return 0.0
+    hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
+    neon_green = (
+        (hsv[..., 0] >= 40)
+        & (hsv[..., 0] <= 85)
+        & (hsv[..., 1] > 140)
+        & (hsv[..., 2] > 130)
+    )
+    return _clamp01(float(np.mean(neon_green)) / 0.025)
 
 
 def estimate_gameplay_hud(frame: np.ndarray) -> GameplayHudObservation:
@@ -102,7 +120,7 @@ def estimate_gameplay_hud(frame: np.ndarray) -> GameplayHudObservation:
         + 0.20 * _clamp01(minimap[4] / 0.012)
     )
 
-    confidence = (
+    racer_confidence = (
         0.30 * rank_score
         + 0.30 * status_score
         + 0.30 * tach_score
@@ -113,7 +131,37 @@ def estimate_gameplay_hud(frame: np.ndarray) -> GameplayHudObservation:
     # three primary HUD anchors before returning strong gameplay evidence.
     primary_anchors = sum(score >= 0.72 for score in (rank_score, status_score, tach_score))
     if primary_anchors < 2:
-        confidence *= 0.45
+        racer_confidence *= 0.45
+
+    # You're The Cop replaces the upper-left rank block with a top-right row of
+    # bright-green police resources above the timer. The first V11.1 live run
+    # therefore had perfect minimap/tach anchors but was penalized to 0.32 and
+    # mistaken for an unknown menu. The resource row is absent from the retained
+    # racer/menu corpus, so use it as a strict alternate layout anchor rather than
+    # weakening the normal two-of-three rule.
+    pursuit_icon_score = _pursuit_icon_score(_roi(frame, 0.66, 0.035, 0.98, 0.13))
+    pursuit_score = (
+        0.45 * pursuit_icon_score
+        + 0.25 * tach_score
+        + 0.20 * map_score
+        + 0.10 * status_score
+    )
+    pursuit_owned = (
+        pursuit_icon_score >= 0.72
+        and tach_score >= 0.72
+        and map_score >= 0.72
+        and status_score >= 0.50
+    )
+    if not pursuit_owned:
+        pursuit_score *= 0.45
+
+    if pursuit_owned and pursuit_score > racer_confidence:
+        layout = "pursuit"
+    elif racer_confidence >= 0.55:
+        layout = "racer"
+    else:
+        layout = "unknown"
+    confidence = max(racer_confidence, pursuit_score)
 
     return GameplayHudObservation(
         confidence=_clamp01(confidence),
@@ -121,4 +169,7 @@ def estimate_gameplay_hud(frame: np.ndarray) -> GameplayHudObservation:
         status_score=_clamp01(status_score),
         tach_score=_clamp01(tach_score),
         map_score=_clamp01(map_score),
+        pursuit_score=_clamp01(pursuit_score),
+        pursuit_icon_score=_clamp01(pursuit_icon_score),
+        layout=layout,
     )

@@ -101,6 +101,7 @@ profile:
   # V7 fixed-HUD gameplay ownership. Overnight evidence proved the race HUD remains
   # reliable even when the pavement detector is blind against a wall. Strong fixed
   # rank/lap/tach geometry can therefore keep the profile in gameplay ownership.
+  # V11.2 also recognizes the alternate cop timer/resource/minimap/tach layout.
   hud_gameplay_enabled: true
   hud_gameplay_threshold: 0.82
 

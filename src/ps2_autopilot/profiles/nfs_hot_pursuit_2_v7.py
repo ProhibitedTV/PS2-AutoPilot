@@ -58,9 +58,14 @@ class NfsHotPursuit2V7Profile(NfsHotPursuit2V6Profile):
         self._hud_claim_active = True
 
         synthetic_score = max(self.template_threshold + 0.01, self.hud.confidence)
+        semantic = (
+            "nfs_cop_hud_geometry"
+            if self.hud.layout == "pursuit"
+            else "nfs_race_hud_geometry"
+        )
         return replace(
             ctx,
-            template=TemplateMatch("nfs_race_hud_geometry", min(1.0, synthetic_score)),
+            template=TemplateMatch(semantic, min(1.0, synthetic_score)),
         )
 
     def tick(self, controller, ctx: ProfileContext) -> str:
@@ -97,6 +102,9 @@ class NfsHotPursuit2V7Profile(NfsHotPursuit2V6Profile):
                 "nfs_hud_status_score": round(self.hud.status_score, 3),
                 "nfs_hud_tach_score": round(self.hud.tach_score, 3),
                 "nfs_hud_map_score": round(self.hud.map_score, 3),
+                "nfs_hud_pursuit_score": round(self.hud.pursuit_score, 3),
+                "nfs_hud_pursuit_icon_score": round(self.hud.pursuit_icon_score, 3),
+                "nfs_hud_layout": self.hud.layout,
                 "nfs_hud_gameplay_claim_active": self._hud_claim_active,
                 "nfs_hud_gameplay_claims": self.hud_gameplay_claims,
                 "nfs_hud_gameplay_ticks": self.hud_gameplay_ticks,

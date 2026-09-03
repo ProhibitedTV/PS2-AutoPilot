@@ -65,6 +65,28 @@ def _menu_frame() -> np.ndarray:
     return frame
 
 
+def _pursuit_hud_frame() -> np.ndarray:
+    frame = np.full((360, 640, 3), (55, 70, 45), dtype=np.uint8)
+
+    # Fixed minimap and tachometer anchors are shared with racer gameplay.
+    cv2.rectangle(frame, (10, 130), (175, 220), (10, 10, 10), -1)
+    pts = np.array([[25, 205], [55, 165], [95, 190], [150, 145]], dtype=np.int32)
+    cv2.polylines(frame, [pts], False, (225, 225, 225), 5)
+    cv2.rectangle(frame, (485, 200), (630, 330), (8, 8, 8), -1)
+    cv2.ellipse(frame, (555, 282), (62, 62), 0, 205, 340, (40, 135, 225), 7)
+    for x in range(500, 620, 20):
+        cv2.line(frame, (x, 260), (x + 8, 250), (220, 220, 220), 2)
+
+    # Cop gameplay has green resource icons and an amber timer in the upper-right,
+    # not the racer's upper-left position/rank panel.
+    cv2.rectangle(frame, (425, 12), (628, 64), (18, 18, 18), -1)
+    for x in range(440, 610, 28):
+        cv2.rectangle(frame, (x, 20), (x + 18, 31), (35, 225, 45), -1)
+    cv2.line(frame, (445, 48), (535, 48), (45, 145, 225), 5)
+    cv2.line(frame, (550, 48), (610, 48), (220, 220, 220), 3)
+    return frame
+
+
 def _ctx(frame: np.ndarray, *, now: float = 10.0, motion: float = 0.0) -> ProfileContext:
     return ProfileContext(frame=frame, motion=motion, template=None, now=now)
 
@@ -78,6 +100,30 @@ def test_fixed_hud_detector_separates_gameplay_from_plain_menu():
     assert hud.status_score >= 0.72
     assert hud.tach_score >= 0.72
     assert menu.confidence < 0.55
+    assert menu.layout == "unknown"
+
+
+def test_fixed_hud_detector_recognizes_pursuit_layout_without_rank_block():
+    pursuit = estimate_gameplay_hud(_pursuit_hud_frame())
+
+    assert pursuit.confidence >= 0.82
+    assert pursuit.layout == "pursuit"
+    assert pursuit.pursuit_score >= 0.82
+    assert pursuit.pursuit_icon_score >= 0.72
+    assert pursuit.rank_score < 0.72
+
+
+def test_pursuit_hud_claims_cop_racing_semantic():
+    profile = NfsHotPursuit2V7Profile({"hud_gameplay_threshold": 0.82})
+    controller = FakeController()
+
+    action = profile.tick(controller, _ctx(_pursuit_hud_frame(), now=15.0, motion=0.0))
+
+    assert profile.phase is NfsPhase.RACING
+    assert profile.drive_mode == "cop"
+    assert profile.screen.value == "cop_racing"
+    assert profile.hud.layout == "pursuit"
+    assert "hud-owned gameplay" in action
 
 
 def test_hud_claims_racing_even_when_road_and_motion_are_zero():
