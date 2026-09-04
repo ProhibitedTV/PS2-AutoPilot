@@ -13,26 +13,28 @@ from ps2_autopilot.profiles import (
     NfsHotPursuit2V11Profile,
     NfsHotPursuit2V12Profile,
     NfsHotPursuit2V13Profile,
+    NfsHotPursuit2V14Profile,
 )
 from ps2_autopilot.profiles.registry import build_profile, canonical_profile_name, get_profile_spec
 
 
-def test_registry_selects_nfs_hp2_v13():
+def test_registry_selects_nfs_hp2_v14():
     profile = build_profile({"name": "nfs_hot_pursuit_2"})
-    assert type(profile) is NfsHotPursuit2V13Profile
-    assert NfsHotPursuit2Profile is NfsHotPursuit2V13Profile
-    assert NfsHotPursuit2V1Profile is not NfsHotPursuit2V13Profile
-    assert NfsHotPursuit2V2Profile is not NfsHotPursuit2V13Profile
-    assert NfsHotPursuit2V3Profile is not NfsHotPursuit2V13Profile
-    assert NfsHotPursuit2V4Profile is not NfsHotPursuit2V13Profile
-    assert NfsHotPursuit2V5Profile is not NfsHotPursuit2V13Profile
-    assert NfsHotPursuit2V6Profile is not NfsHotPursuit2V13Profile
-    assert NfsHotPursuit2V7Profile is not NfsHotPursuit2V13Profile
-    assert NfsHotPursuit2V8Profile is not NfsHotPursuit2V13Profile
-    assert NfsHotPursuit2V9Profile is not NfsHotPursuit2V13Profile
-    assert NfsHotPursuit2V10Profile is not NfsHotPursuit2V13Profile
-    assert NfsHotPursuit2V11Profile is not NfsHotPursuit2V13Profile
-    assert NfsHotPursuit2V12Profile is not NfsHotPursuit2V13Profile
+    assert type(profile) is NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2Profile is NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2V1Profile is not NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2V2Profile is not NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2V3Profile is not NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2V4Profile is not NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2V5Profile is not NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2V6Profile is not NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2V7Profile is not NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2V8Profile is not NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2V9Profile is not NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2V10Profile is not NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2V11Profile is not NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2V12Profile is not NfsHotPursuit2V14Profile
+    assert NfsHotPursuit2V13Profile is not NfsHotPursuit2V14Profile
     assert get_profile_spec("nfs").name == "nfs_hot_pursuit_2"
     assert get_profile_spec("nfs_hp2").maturity == "diagnostic"
 
