@@ -127,7 +127,7 @@ def test_weak_hint_refuses_high_motion_scene():
     assert profile.semantic_hint_accepts == 0
 
 
-def test_strict_template_remains_immediate_authority_and_resets_hint():
+def test_strict_template_keeps_existing_menu_stability_and_resets_hint():
     profile = NfsHotPursuit2V12Profile({"template_threshold": 0.84})
 
     profile._recognized_screen(
@@ -137,7 +137,7 @@ def test_strict_template_remains_immediate_authority_and_resets_hint():
             score=0.30,
         )
     )
-    screen = profile._recognized_screen(
+    first_strict = profile._recognized_screen(
         _ctx(
             now=50.1,
             name="nfs_world_racing_quick_race_selected_01",
@@ -145,9 +145,18 @@ def test_strict_template_remains_immediate_authority_and_resets_hint():
         )
     )
 
-    assert screen is NfsScreen.WORLD_QUICK_RACE
+    assert first_strict is NfsScreen.UNKNOWN
     assert profile.semantic_hint_screen is None
     assert not profile.semantic_hint_claim_active
+
+    screen = profile._recognized_screen(
+        _ctx(
+            now=50.2,
+            name="nfs_world_racing_quick_race_selected_01",
+            score=0.90,
+        )
+    )
+    assert screen is NfsScreen.WORLD_QUICK_RACE
 
 
 def test_gameplay_phase_never_uses_weak_menu_hint():
