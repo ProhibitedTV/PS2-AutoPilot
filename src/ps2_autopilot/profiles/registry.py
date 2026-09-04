@@ -7,7 +7,7 @@ from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
 from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from .madden2005_v32 import Madden2005V32Profile
-from .nfs_hot_pursuit_2_v13 import NfsHotPursuit2V13Profile
+from .nfs_hot_pursuit_2_v14 import NfsHotPursuit2V14Profile
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,7 @@ def _jak_factory(cfg: dict) -> GameProfile:
 
 
 def _nfs_hp2_factory(cfg: dict) -> GameProfile:
-    return NfsHotPursuit2V13Profile(dict(cfg))
+    return NfsHotPursuit2V14Profile(dict(cfg))
 
 
 PROFILE_SPECS: dict[str, ProfileSpec] = {
@@ -69,9 +69,10 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         name="nfs_hot_pursuit_2",
         display_name="Need for Speed: Hot Pursuit 2",
         template_namespace="nfs_hot_pursuit_2",
-        # V13 keeps V12's conservative weak-menu reacquisition and adds a guarded
-        # visual replay-chrome fallback. The replay fallback only owns the distinctive
-        # PS2 transport UI and reuses the existing one-shot Start -> Return Menu path.
+        # V14 keeps V13's replay-chrome escape and V12's weak selected-row
+        # reacquisition, while interlocking V6's generic bootstrap behind V3's
+        # evidence-backed pending menu transactions. A known Confirm transition now
+        # gets a quiet acknowledgement window instead of competing bootstrap inputs.
         # Keep diagnostic until the active unattended stack earns a fresh soak.
         maturity="diagnostic",
         factory=_nfs_hp2_factory,
