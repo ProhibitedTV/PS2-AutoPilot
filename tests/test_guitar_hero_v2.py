@@ -224,3 +224,53 @@ def test_difficulty_menu_uses_selected_row_evidence():
     taps = [event[1] for event in controller.events if event[0] == "tap"]
     assert taps == ["down", "confirm"]
     assert profile.phase is GuitarHeroPhase.AWAIT_GAMEPLAY
+
+
+def test_image_only_menu_classification_respects_expected_route_stage():
+    profile = GuitarHeroV2Profile({})
+    black = np.zeros((480, 640, 3), dtype=np.uint8)
+    observation = profile.vision.analyze(black)
+    ambiguous = observation.__class__(
+        gameplay_confidence=0.0,
+        receptor_confidence=0.0,
+        receptor_centers=observation.receptor_centers,
+        hit_strengths=observation.hit_strengths,
+        sustains=observation.sustains,
+        save_prompt_score=0.0,
+        main_menu_score=1.0,
+        setlist_score=1.0,
+        difficulty_score=1.0,
+        title_score=0.0,
+        selected_main_index=0,
+        selected_difficulty_index=1,
+        frame_signature=observation.frame_signature,
+    )
+    ctx = _ctx(black, now=60.0)
+
+    profile.phase = GuitarHeroPhase.MENU
+    profile.route_stage = "difficulty"
+    assert profile._classify(ctx, ambiguous) is GuitarHeroScreen.DIFFICULTY
+
+    profile.route_stage = "setlist"
+    assert profile._classify(ctx, ambiguous) is GuitarHeroScreen.SETLIST
+
+    profile.route_stage = "main"
+    assert profile._classify(ctx, ambiguous) is GuitarHeroScreen.MAIN_MENU
+
+
+def test_static_frame_after_gameplay_is_presentation_until_results_evidence_arrives():
+    profile = GuitarHeroV2Profile({})
+    black = np.zeros((480, 640, 3), dtype=np.uint8)
+    observation = profile.vision.analyze(black)
+    controller = FakeController()
+
+    profile.phase = GuitarHeroPhase.POST_SONG
+    profile.route_stage = "gameplay"
+    profile._last_gameplay_at = 70.0
+    screen = profile._classify(_ctx(black, now=71.0, motion=0.0), observation)
+
+    assert screen is GuitarHeroScreen.PRESENTATION
+    profile.screen = screen
+    action = profile._tick_non_gameplay(controller, _ctx(black, now=71.0), observation)
+    assert "wait for cutscene" in action
+    assert not any(event[0] == "tap" for event in controller.events)
