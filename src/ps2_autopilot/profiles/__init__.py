@@ -1,4 +1,5 @@
 from .generic_chaos import GenericChaosProfile
+from .guitar_hero_v2 import GuitarHeroPhase, GuitarHeroScreen, GuitarHeroV2Profile
 from .jak_and_daxter import JakAndDaxterProfile as JakAndDaxterV1Profile, JakPhase
 from .jak_and_daxter_v2 import JakAndDaxterV2Profile
 from .jak_and_daxter_v3 import JakAndDaxterV3Profile
@@ -66,6 +67,7 @@ from .nfs_hot_pursuit_2_v12 import NfsHotPursuit2V12Profile
 from .nfs_hot_pursuit_2_v13 import NfsHotPursuit2V13Profile
 from .nfs_hot_pursuit_2_v14 import NfsHotPursuit2V14Profile
 
+GuitarHeroProfile = GuitarHeroV2Profile
 JakAndDaxterProfile = JakAndDaxterV22Profile
 Madden2005Profile = Madden2005V32Profile
 NfsHotPursuit2Profile = NfsHotPursuit2V14Profile
@@ -80,6 +82,10 @@ from .registry import (  # noqa: E402
 
 __all__ = [
     "GenericChaosProfile",
+    "GuitarHeroProfile",
+    "GuitarHeroV2Profile",
+    "GuitarHeroPhase",
+    "GuitarHeroScreen",
     "JakAndDaxterProfile",
     "JakAndDaxterV1Profile",
     "JakAndDaxterV2Profile",
