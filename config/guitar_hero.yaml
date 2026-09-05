@@ -1,0 +1,99 @@
+window_title_contains: "PCSX2"
+loop_hz: 60
+
+performance:
+  opencv_threads: 2
+  template_matching_async: true
+  template_scan_interval_seconds: 0.15
+  template_result_max_age_seconds: 0.80
+
+controller:
+  backend: virtual_gamepad
+  focus_window: true
+
+# Guitar Hero legitimately has long static title/loading/result frames. Recovery is
+# intentionally much slower than the action games; the profile also suppresses its
+# own recovery inputs while presentation/gameplay owns the screen.
+watchdog:
+  motion_threshold: 0.0025
+  stuck_seconds: 180
+  recovery_cooldown_seconds: 30
+  reload_savestate_after_recoveries: 99
+  load_state_key: "f3"
+
+overlay:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8765
+  state_hz: 5.0
+
+runtime_retention:
+  max_total_mb: 400
+  max_failure_bundles: 40
+  max_unknown_captures: 100
+  prune_interval_seconds: 60
+
+observability:
+  enabled: true
+  console: true
+  verbose_console: true
+  heartbeat_seconds: 3.0
+  verbose_log_seconds: 0.50
+  spatial_log_seconds: 0.50
+  spatial_console_seconds: 1.5
+  history_size: 500
+  input_history_size: 800
+  max_log_bytes: 12000000
+  failure_bundle_cooldown_seconds: 8.0
+  max_failure_bundles: 40
+  stick_log_interval_seconds: 0.20
+  stick_log_delta: 0.05
+
+profile:
+  name: guitar_hero
+
+  # Streaming route: boot/save -> Quick Play -> setlist -> difficulty -> song ->
+  # results -> next song. Keep Easy for the first live calibration; once note timing
+  # is proven, change this to medium/hard/expert without changing the policy.
+  difficulty: easy
+  song_advance_after_completion: 1
+
+  # Menu/presentation arbitration. Unknown moving screens are always preserved as
+  # presentation; static loading after a launch is also input-silent.
+  template_threshold: 0.82
+  menu_stable_seconds: 0.45
+  menu_input_settle_seconds: 0.22
+  menu_progress_timeout_seconds: 1.25
+  menu_progress_delta: 0.018
+  presentation_motion_threshold: 0.018
+  boot_prompt_seconds: 2.0
+  boot_retry_seconds: 5.0
+  boot_max_attempts: 4
+  launch_wait_seconds: 35.0
+  post_song_settle_seconds: 1.25
+  post_song_confirm_limit: 4
+
+  # Normalized low-latency highway vision. Five colored fret receptors establish the
+  # strike row dynamically, so desktop/window size is not a pixel calibration.
+  vision_width: 640
+  vision_height: 480
+  gameplay_threshold: 0.64
+  hit_threshold: 0.075
+  hit_reset_threshold: 0.028
+  hit_gap_top: 0.095
+  hit_gap_bottom: 0.040
+  hit_half_width: 0.020
+  tap_hold_seconds: 0.024
+  rearm_seconds: 0.014
+  sustain_height: 0.20
+  sustain_half_width: 0.010
+  sustain_min_run: 0.28
+  sustain_grace_seconds: 0.055
+
+  # Whammy is safe when a visual sustain owns a lane. Star Power is implemented as
+  # non-blocking Select but kept off until the first live meter/timing soak.
+  whammy_enabled: true
+  whammy_hz: 7.0
+  star_power_enabled: false
+  star_power_note_interval: 90
+  star_power_min_seconds: 28.0

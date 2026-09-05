@@ -43,11 +43,12 @@ exit /b %EXIT_CODE%
 :missing_config
 echo [ERROR] run24x7.cmd requires an explicit game config.
 echo [INFO] Use one of the game-specific launchers instead:
+echo        run-guitar-hero24x7.cmd
 echo        run-nfs24x7.cmd
 echo        run-madden24x7.cmd
 echo        run-jak24x7.cmd
 echo [INFO] Or pass a config directly, for example:
-echo        run24x7.cmd config\nfs_hot_pursuit_2.yaml
+echo        run24x7.cmd config\guitar_hero.yaml
 exit /b 2
 
 :stopped

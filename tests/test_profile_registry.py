@@ -1,6 +1,7 @@
 import pytest
 
-from ps2_autopilot.profiles import Madden2005Profile
+from ps2_autopilot.profiles import GuitarHeroProfile, Madden2005Profile
+from ps2_autopilot.profiles.guitar_hero_v2 import GuitarHeroV2Profile
 from ps2_autopilot.profiles.jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from ps2_autopilot.profiles.madden2005_v32 import Madden2005V32Profile
 from ps2_autopilot.profiles.registry import (
@@ -18,6 +19,15 @@ def test_registry_selects_exact_active_madden_v32_factory():
     assert get_profile_spec("madden2005").maturity == "production-candidate"
 
 
+def test_registry_selects_guitar_hero_v2_and_aliases():
+    profile = build_profile({"name": "gh1", "difficulty": "easy"})
+    assert type(profile) is GuitarHeroV2Profile
+    assert GuitarHeroProfile is GuitarHeroV2Profile
+    assert get_profile_spec("guitarhero").name == "guitar_hero"
+    assert get_profile_spec("gh").maturity == "diagnostic"
+    assert canonical_profile_name("guitar-hero-1") == "guitar_hero"
+
+
 def test_registry_selects_exact_active_jak_v22_without_reusing_madden():
     profile = build_profile({"name": "jak_and_daxter", "mode": "observe"})
     assert type(profile) is JakAndDaxterV22Profile
@@ -27,9 +37,9 @@ def test_registry_selects_exact_active_jak_v22_without_reusing_madden():
     assert canonical_profile_name("precursor-legacy") == "jak_and_daxter"
 
 
-def test_registry_listing_contains_both_real_games():
+def test_registry_listing_contains_real_games():
     names = {spec.name for spec in list_profile_specs()}
-    assert {"madden2005", "jak_and_daxter"} <= names
+    assert {"madden2005", "jak_and_daxter", "guitar_hero"} <= names
 
 
 def test_unknown_profile_has_useful_error():
