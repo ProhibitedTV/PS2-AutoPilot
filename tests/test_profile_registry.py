@@ -46,4 +46,4 @@ def test_registry_listing_contains_real_games():
 
 def test_unknown_profile_has_useful_error():
     with pytest.raises(ValueError, match="Available profiles"):
-        build_profile({"name": "not_a_real_game")
+        build_profile({"name": "not_a_real_game"})
