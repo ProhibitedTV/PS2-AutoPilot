@@ -90,6 +90,7 @@ class GuitarHeroRuntimeMixin:
             self._post_song_confirms = 0
             self._song_advance_pending = 0
         self.phase = GuitarHeroPhase.PLAYING
+        self.route_stage = "gameplay"
         self._last_gameplay_at = now
         self._launch_started_at = -1e9
         self._menu_queue.clear()
@@ -213,6 +214,7 @@ class GuitarHeroRuntimeMixin:
 
         if self.screen == GuitarHeroScreen.MAIN_MENU:
             self.phase = GuitarHeroPhase.MENU
+            self.route_stage = "main"
             if not self._screen_stable(now):
                 return "main menu settling"
             template_index = self._template_main_index(
@@ -221,10 +223,13 @@ class GuitarHeroRuntimeMixin:
             selected = template_index if template_index is not None else obs.selected_main_index
             self._queue_plan("main_to_quick_play", self._main_menu_plan(selected))
             action = self._drive_menu_queue(controller, obs, now)
+            if action is not None and not self._menu_queue and action.endswith("confirm"):
+                self.route_stage = "setlist"
             return action or "Quick Play selected"
 
         if self.screen == GuitarHeroScreen.SETLIST:
             self.phase = GuitarHeroPhase.MENU
+            self.route_stage = "setlist"
             if not self._screen_stable(now):
                 return "setlist settling"
             if self._menu_plan_tag != "setlist_launch":
@@ -234,11 +239,14 @@ class GuitarHeroRuntimeMixin:
                 self._setlist_visits += 1
             action = self._drive_menu_queue(controller, obs, now)
             if action is not None:
+                if not self._menu_queue and action.endswith("confirm"):
+                    self.route_stage = "difficulty"
                 return action
             return "setlist song selected"
 
         if self.screen == GuitarHeroScreen.DIFFICULTY:
             self.phase = GuitarHeroPhase.MENU
+            self.route_stage = "difficulty"
             if not self._screen_stable(now):
                 return "difficulty menu settling"
             selected = obs.selected_difficulty_index
@@ -257,12 +265,14 @@ class GuitarHeroRuntimeMixin:
                 if not self._menu_queue and action.endswith("confirm"):
                     self._first_difficulty_selection = False
                     self.phase = GuitarHeroPhase.AWAIT_GAMEPLAY
+                    self.route_stage = "song"
                     self._launch_started_at = now
                 return action
             return f"difficulty {self.difficulty} selected"
 
         if self.screen == GuitarHeroScreen.FAILED:
             self.phase = GuitarHeroPhase.POST_SONG
+            self.route_stage = "post_song"
             if self._song_active:
                 self.songs_failed += 1
                 self._song_active = False
@@ -275,6 +285,7 @@ class GuitarHeroRuntimeMixin:
             return action or "retry selected"
 
         if self.screen in {GuitarHeroScreen.RESULTS, GuitarHeroScreen.HIGH_SCORE}:
+            self.route_stage = "post_song"
             if self.phase == GuitarHeroPhase.PLAYING:
                 self.phase = GuitarHeroPhase.POST_SONG
                 self._post_song_started_at = now
@@ -372,6 +383,7 @@ class GuitarHeroRuntimeMixin:
             "gh_phase": self.phase.value,
             "gh_screen": self.screen.value,
             "gh_difficulty": self.difficulty,
+            "gh_route_stage": self.route_stage,
             "gh_notes_attempted": self.notes_attempted,
             "gh_chords_attempted": self.chords_attempted,
             "gh_sustain_ticks": self.sustain_ticks,
