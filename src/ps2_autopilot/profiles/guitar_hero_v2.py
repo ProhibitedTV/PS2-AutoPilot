@@ -75,6 +75,7 @@ class GuitarHeroV2Profile(GuitarHeroRuntimeMixin, GameProfile):
 
         self.phase = GuitarHeroPhase.BOOT
         self.screen = GuitarHeroScreen.UNKNOWN
+        self.route_stage = "boot"
         self._screen_since = 0.0
         self._last_tick_at = 0.0
         self._last_obs: GuitarHeroObservation | None = None
@@ -146,15 +147,29 @@ class GuitarHeroV2Profile(GuitarHeroRuntimeMixin, GameProfile):
             return GuitarHeroScreen.GAMEPLAY
         if obs.save_prompt_score >= self.save_prompt_threshold and self.phase == GuitarHeroPhase.BOOT:
             return GuitarHeroScreen.SAVE_PROMPT
-        if obs.main_menu_score >= self.main_menu_threshold and self.phase != GuitarHeroPhase.PLAYING:
-            return GuitarHeroScreen.MAIN_MENU
-        if obs.setlist_score >= self.setlist_threshold and self.phase != GuitarHeroPhase.PLAYING:
+
+        # The three menu screens all contain bright stacked text, so route context is
+        # part of image-only ownership. Named templates above remain authoritative.
+        # This prevents a four-row difficulty screen from being mistaken for the
+        # five-row main menu merely because both have a yellow selected item.
+        if (
+            obs.setlist_score >= self.setlist_threshold
+            and self.route_stage in {"setlist", "post_song"}
+            and self.phase != GuitarHeroPhase.PLAYING
+        ):
             return GuitarHeroScreen.SETLIST
         if (
             obs.difficulty_score >= self.difficulty_threshold
-            and self.phase in {GuitarHeroPhase.MENU, GuitarHeroPhase.BOOT}
+            and self.route_stage == "difficulty"
+            and self.phase != GuitarHeroPhase.PLAYING
         ):
             return GuitarHeroScreen.DIFFICULTY
+        if (
+            obs.main_menu_score >= self.main_menu_threshold
+            and self.route_stage in {"boot", "main"}
+            and self.phase != GuitarHeroPhase.PLAYING
+        ):
+            return GuitarHeroScreen.MAIN_MENU
         if obs.title_score >= self.title_threshold and self.phase in {
             GuitarHeroPhase.BOOT,
             GuitarHeroPhase.PRESENTATION,
@@ -171,8 +186,11 @@ class GuitarHeroV2Profile(GuitarHeroRuntimeMixin, GameProfile):
         if self.phase == GuitarHeroPhase.AWAIT_GAMEPLAY:
             return GuitarHeroScreen.PRESENTATION
 
+        # Leaving the highway does not prove a results screen. A static venue shot,
+        # crowd pose, or held video frame is still presentation and must not receive
+        # Confirm. Exact results/failed/high-score templates own those screens until
+        # live captures justify a dedicated image-only semantic.
         if self.phase in {GuitarHeroPhase.PLAYING, GuitarHeroPhase.POST_SONG}:
-            if self._last_gameplay_at > -1e8:
-                return GuitarHeroScreen.RESULTS
+            return GuitarHeroScreen.PRESENTATION
 
         return GuitarHeroScreen.UNKNOWN
