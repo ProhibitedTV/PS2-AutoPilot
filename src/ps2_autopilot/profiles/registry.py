@@ -5,6 +5,7 @@ from typing import Callable
 
 from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
+from .guitar_hero_v2 import GuitarHeroV2Profile
 from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from .madden2005_v32 import Madden2005V32Profile
 from .nfs_hot_pursuit_2_v14 import NfsHotPursuit2V14Profile
@@ -21,6 +22,10 @@ class ProfileSpec:
 
 def _generic_factory(cfg: dict) -> GameProfile:
     return GenericChaosProfile(float(cfg.get("action_seconds", 1.25)))
+
+
+def _guitar_hero_factory(cfg: dict) -> GameProfile:
+    return GuitarHeroV2Profile(dict(cfg))
 
 
 def _madden_factory(cfg: dict) -> GameProfile:
@@ -42,6 +47,16 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         template_namespace="generic_chaos",
         maturity="diagnostic",
         factory=_generic_factory,
+    ),
+    "guitar_hero": ProfileSpec(
+        name="guitar_hero",
+        display_name="Guitar Hero (2005)",
+        template_namespace="guitar_hero",
+        # V2 owns the complete unattended Quick Play lifecycle and direct DualShock
+        # note input, but remains diagnostic until live timing/menu captures prove the
+        # image-only receptor geometry and every boot/post-song transition.
+        maturity="diagnostic",
+        factory=_guitar_hero_factory,
     ),
     "madden2005": ProfileSpec(
         name="madden2005",
@@ -80,6 +95,10 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
 }
 
 PROFILE_ALIASES = {
+    "gh": "guitar_hero",
+    "gh1": "guitar_hero",
+    "guitarhero": "guitar_hero",
+    "guitar_hero_1": "guitar_hero",
     "madden": "madden2005",
     "jak": "jak_and_daxter",
     "jak1": "jak_and_daxter",
