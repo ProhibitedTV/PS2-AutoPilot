@@ -99,7 +99,7 @@ def test_live_difficulty_topology_reacquires_from_presentation_and_confirms_easy
     action = profile.tick(controller, _ctx(frame, 10.0))
 
     assert action == "menu difficulty_launch: confirm"
-    assert ("tap", "confirm", 0.08) in controller.events
+    assert ("tap", "confirm", 0.06) in controller.events
     assert profile.screen is GuitarHeroScreen.DIFFICULTY
     assert profile.phase is GuitarHeroPhase.AWAIT_GAMEPLAY
     assert profile.route_stage == "song"
