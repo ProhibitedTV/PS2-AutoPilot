@@ -81,7 +81,7 @@ def _cfg() -> dict:
         "receptor_lock_threshold": 0.78,
         "receptor_lock_frames": 3,
         "note_trigger_gap": 0.030,
-        "note_receptor_exclusion": 0.008,
+        "note_receptor_exclusion": 0.024,
         "note_lane_half_width": 0.032,
         "hit_threshold": 0.50,
         "hit_reset_threshold": 0.10,
