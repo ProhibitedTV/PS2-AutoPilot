@@ -5,7 +5,7 @@ from typing import Callable
 
 from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
-from .guitar_hero_v4 import GuitarHeroV4Profile
+from .guitar_hero_v5 import GuitarHeroV5Profile
 from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from .madden2005_v32 import Madden2005V32Profile
 from .nfs_hot_pursuit_2_v14 import NfsHotPursuit2V14Profile
@@ -25,7 +25,7 @@ def _generic_factory(cfg: dict) -> GameProfile:
 
 
 def _guitar_hero_factory(cfg: dict) -> GameProfile:
-    return GuitarHeroV4Profile(dict(cfg))
+    return GuitarHeroV5Profile(dict(cfg))
 
 
 def _madden_factory(cfg: dict) -> GameProfile:
@@ -52,8 +52,8 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         name="guitar_hero",
         display_name="Guitar Hero (2005)",
         template_namespace="guitar_hero",
-        # V4 keeps V3's first-run tutorial ownership and hardens the live GH1 title
-        # card against false MAIN_MENU/GAMEPLAY claims from the colored logo artwork.
+        # V5 keeps V4's hardened title/tutorial ownership and changes the first-run
+        # controller card to use menu Confirm/Cross before a bounded L2 fallback.
         # Keep diagnostic until the complete live lifecycle earns retained evidence.
         maturity="diagnostic",
         factory=_guitar_hero_factory,
