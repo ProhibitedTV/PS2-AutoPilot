@@ -103,8 +103,9 @@ def _failed_card(selected: int = 1) -> np.ndarray:
 def _title_like_transition() -> np.ndarray:
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
     frame[:] = (30, 25, 35)
-    # Deliberately satisfy V4's broad image-only title topology: large pale center
-    # plus a bright lower prompt on a dark background.
+    # Deliberately satisfy V4's broad image-only title topology. The old policy would
+    # reset to BOOT here; V11 may instead conservatively wait or legitimately claim a
+    # setlist-looking frame, but it must never treat this image-only collision as TITLE.
     cv2.rectangle(frame, (150, 80), (490, 320), (210, 210, 210), -1)
     cv2.rectangle(frame, (180, 355), (460, 390), (225, 225, 225), -1)
     return frame
@@ -147,9 +148,11 @@ def test_failed_new_song_transition_cannot_be_reset_to_boot_by_title_false_posit
 
     transition = _title_like_transition()
     assert profile._title_splash_score(transition) >= profile.title_splash_threshold
-    second = profile.tick(controller, _ctx(transition, 10.2, motion=0.0))
+    profile.tick(controller, _ctx(transition, 10.2, motion=0.0))
 
-    assert second == "wait for failed->setlist transition"
+    # The important retained-soak invariant is route preservation. A frame that also
+    # has strong setlist evidence may immediately enter the setlist handler; otherwise
+    # the bounded transition guard waits. Either is acceptable. TITLE/BOOT is not.
     assert profile.route_stage == "setlist"
     assert profile.phase is GuitarHeroPhase.MENU
     assert profile.screen is not GuitarHeroScreen.TITLE
