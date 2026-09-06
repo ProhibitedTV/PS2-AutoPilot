@@ -10,6 +10,7 @@ from ps2_autopilot.profiles.guitar_hero_v7 import GuitarHeroV7Profile
 from ps2_autopilot.profiles.guitar_hero_v8 import GuitarHeroV8Profile
 from ps2_autopilot.profiles.guitar_hero_v9 import GuitarHeroV9Profile
 from ps2_autopilot.profiles.guitar_hero_v10 import GuitarHeroV10Profile
+from ps2_autopilot.profiles.guitar_hero_v11 import GuitarHeroV11Profile
 from ps2_autopilot.profiles.jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from ps2_autopilot.profiles.madden2005_v32 import Madden2005V32Profile
 from ps2_autopilot.profiles.registry import (
@@ -27,18 +28,19 @@ def test_registry_selects_exact_active_madden_v32_factory():
     assert get_profile_spec("madden2005").maturity == "production-candidate"
 
 
-def test_registry_selects_guitar_hero_v10_and_aliases():
+def test_registry_selects_guitar_hero_v11_and_aliases():
     profile = build_profile({"name": "gh1", "difficulty": "easy"})
-    assert type(profile) is GuitarHeroV10Profile
-    assert GuitarHeroProfile is GuitarHeroV10Profile
-    assert GuitarHeroV2Profile is not GuitarHeroV10Profile
-    assert GuitarHeroV3Profile is not GuitarHeroV10Profile
-    assert GuitarHeroV4Profile is not GuitarHeroV10Profile
-    assert GuitarHeroV5Profile is not GuitarHeroV10Profile
-    assert GuitarHeroV6Profile is not GuitarHeroV10Profile
-    assert GuitarHeroV7Profile is not GuitarHeroV10Profile
-    assert GuitarHeroV8Profile is not GuitarHeroV10Profile
-    assert GuitarHeroV9Profile is not GuitarHeroV10Profile
+    assert type(profile) is GuitarHeroV11Profile
+    assert GuitarHeroProfile is GuitarHeroV11Profile
+    assert GuitarHeroV2Profile is not GuitarHeroV11Profile
+    assert GuitarHeroV3Profile is not GuitarHeroV11Profile
+    assert GuitarHeroV4Profile is not GuitarHeroV11Profile
+    assert GuitarHeroV5Profile is not GuitarHeroV11Profile
+    assert GuitarHeroV6Profile is not GuitarHeroV11Profile
+    assert GuitarHeroV7Profile is not GuitarHeroV11Profile
+    assert GuitarHeroV8Profile is not GuitarHeroV11Profile
+    assert GuitarHeroV9Profile is not GuitarHeroV11Profile
+    assert GuitarHeroV10Profile is not GuitarHeroV11Profile
     assert get_profile_spec("guitarhero").name == "guitar_hero"
     assert get_profile_spec("gh").maturity == "diagnostic"
     assert canonical_profile_name("guitar-hero-1") == "guitar_hero"
