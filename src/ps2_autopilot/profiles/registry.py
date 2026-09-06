@@ -5,7 +5,7 @@ from typing import Callable
 
 from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
-from .guitar_hero_v8 import GuitarHeroV8Profile
+from .guitar_hero_v9 import GuitarHeroV9Profile
 from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from .madden2005_v32 import Madden2005V32Profile
 from .nfs_hot_pursuit_2_v14 import NfsHotPursuit2V14Profile
@@ -25,7 +25,7 @@ def _generic_factory(cfg: dict) -> GameProfile:
 
 
 def _guitar_hero_factory(cfg: dict) -> GameProfile:
-    return GuitarHeroV8Profile(dict(cfg))
+    return GuitarHeroV9Profile(dict(cfg))
 
 
 def _madden_factory(cfg: dict) -> GameProfile:
@@ -52,10 +52,10 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         name="guitar_hero",
         display_name="Guitar Hero (2005)",
         template_namespace="guitar_hero",
-        # V8 keeps V7's now-proven first-run/menu route and replaces the permissive
-        # per-color gameplay detector with joint five-receptor geometry plus a narrow
-        # note-arrival zone. Keep diagnostic until a full song/results loop survives
-        # live timing calibration.
+        # V9 keeps V8's joint highway tracker, explicitly owns the retained SONG
+        # FAILED card, deterministically homes the stylized difficulty poster before
+        # applying config, and suppresses fret lanes that do not exist on Easy/Medium.
+        # Keep diagnostic until a full Easy song/results loop survives live timing.
         maturity="diagnostic",
         factory=_guitar_hero_factory,
     ),
