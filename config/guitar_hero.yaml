@@ -53,8 +53,7 @@ profile:
   name: guitar_hero
 
   # Streaming route: boot/save -> Quick Play -> setlist -> difficulty -> song ->
-  # results -> next song. Keep Easy for the first live calibration; once note timing
-  # is proven, change this to medium/hard/expert without changing the policy.
+  # results -> next song. Keep Easy while the live note-arrival timing is calibrated.
   difficulty: easy
   song_advance_after_completion: 1
 
@@ -73,26 +72,45 @@ profile:
   post_song_settle_seconds: 1.25
   post_song_confirm_limit: 4
 
-  # Normalized low-latency highway vision. Five colored fret receptors establish the
-  # strike row dynamically, so desktop/window size is not a pixel calibration.
+  # V8 highway vision solves all five colored fret receptors as one ordered layout
+  # instead of independently choosing any same-colored stage blob.  The layout must
+  # agree for several frames before it is locked, and a note only fires when its head
+  # reaches the narrow arrival zone immediately above that receptor.
   vision_width: 640
   vision_height: 480
   gameplay_threshold: 0.64
-  hit_threshold: 0.075
-  hit_reset_threshold: 0.028
-  hit_gap_top: 0.095
-  hit_gap_bottom: 0.040
-  hit_half_width: 0.020
-  tap_hold_seconds: 0.024
-  rearm_seconds: 0.014
+  receptor_candidate_limit: 6
+  receptor_joint_min_span: 0.18
+  receptor_joint_max_span: 0.58
+  receptor_joint_max_y_spread: 0.055
+  receptor_lock_threshold: 0.80
+  receptor_lock_frames: 3
+  receptor_lock_match_radius: 0.045
+  note_lookahead: 0.18
+  note_trigger_gap: 0.030
+  # Keep the permanent colored receptor ring itself outside the note search. At
+  # 480p this is ~12 px above receptor center; incoming note heads are still visible
+  # immediately above it, but an idle highway cannot self-trigger every lane.
+  note_receptor_exclusion: 0.024
+  note_lane_half_width: 0.032
+  note_min_area: 7
+  note_max_area: 1700
+
+  # V8 emits binary note-arrival ownership, so the legacy density threshold is only
+  # a compatibility floor.  A slightly longer non-blocking hold gives PCSX2 two or
+  # three 60 Hz frames to register each fret without turning taps into sustains.
+  hit_threshold: 0.50
+  hit_reset_threshold: 0.10
+  tap_hold_seconds: 0.040
+  rearm_seconds: 0.025
   sustain_height: 0.20
   sustain_half_width: 0.010
   sustain_min_run: 0.28
-  sustain_grace_seconds: 0.055
+  sustain_grace_seconds: 0.070
 
-  # Whammy is safe when a visual sustain owns a lane. Star Power is implemented as
-  # non-blocking Select but kept off until the first live meter/timing soak.
-  whammy_enabled: true
+  # Keep whammy and Star Power off during the first timing soak.  They add controller
+  # activity but do not help us establish whether base fret timing is correct.
+  whammy_enabled: false
   whammy_hz: 7.0
   star_power_enabled: false
   star_power_note_interval: 90
