@@ -5,7 +5,7 @@ from typing import Callable
 
 from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
-from .guitar_hero_v10 import GuitarHeroV10Profile
+from .guitar_hero_v11 import GuitarHeroV11Profile
 from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from .madden2005_v32 import Madden2005V32Profile
 from .nfs_hot_pursuit_2_v14 import NfsHotPursuit2V14Profile
@@ -25,7 +25,7 @@ def _generic_factory(cfg: dict) -> GameProfile:
 
 
 def _guitar_hero_factory(cfg: dict) -> GameProfile:
-    return GuitarHeroV10Profile(dict(cfg))
+    return GuitarHeroV11Profile(dict(cfg))
 
 
 def _madden_factory(cfg: dict) -> GameProfile:
@@ -52,10 +52,10 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         name="guitar_hero",
         display_name="Guitar Hero (2005)",
         template_namespace="guitar_hero",
-        # V10 keeps V9's deterministic Easy route and failure ownership, replaces
-        # failure-card signature transactions with selected-row control, and requires
-        # note components to demonstrate real approach motion before a fret can fire.
-        # Keep diagnostic until the temporal timing model survives a complete song.
+        # V11 keeps V10's temporal note filter, protects the failed->setlist route
+        # from image-only title false positives, and adds a locked-highway fast path
+        # plus gameplay menu-score suppression to reduce the critically over-budget
+        # vision loop seen in the retained V9 soak.
         maturity="diagnostic",
         factory=_guitar_hero_factory,
     ),
