@@ -6,6 +6,7 @@ from .guitar_hero_v5 import GuitarHeroV5Profile
 from .guitar_hero_v6 import GuitarHeroV6Profile
 from .guitar_hero_v7 import GuitarHeroV7Profile
 from .guitar_hero_v8 import GuitarHeroV8Profile
+from .guitar_hero_v9 import GuitarHeroV9Profile
 from .jak_and_daxter import JakAndDaxterProfile as JakAndDaxterV1Profile, JakPhase
 from .jak_and_daxter_v2 import JakAndDaxterV2Profile
 from .jak_and_daxter_v3 import JakAndDaxterV3Profile
@@ -73,7 +74,7 @@ from .nfs_hot_pursuit_2_v12 import NfsHotPursuit2V12Profile
 from .nfs_hot_pursuit_2_v13 import NfsHotPursuit2V13Profile
 from .nfs_hot_pursuit_2_v14 import NfsHotPursuit2V14Profile
 
-GuitarHeroProfile = GuitarHeroV8Profile
+GuitarHeroProfile = GuitarHeroV9Profile
 JakAndDaxterProfile = JakAndDaxterV22Profile
 Madden2005Profile = Madden2005V32Profile
 NfsHotPursuit2Profile = NfsHotPursuit2V14Profile
@@ -96,6 +97,7 @@ __all__ = [
     "GuitarHeroV6Profile",
     "GuitarHeroV7Profile",
     "GuitarHeroV8Profile",
+    "GuitarHeroV9Profile",
     "GuitarHeroPhase",
     "GuitarHeroScreen",
     "JakAndDaxterProfile",
