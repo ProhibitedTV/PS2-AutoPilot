@@ -53,9 +53,20 @@ profile:
   name: guitar_hero
 
   # Streaming route: boot/save -> Quick Play -> setlist -> difficulty -> song ->
-  # results -> next song. Keep Easy while the live note-arrival timing is calibrated.
+  # results/failure -> next song. Keep Easy while live note timing is calibrated.
   difficulty: easy
   song_advance_after_completion: 1
+
+  # GH1 remembers the last difficulty selection. V9 deliberately homes the four-row
+  # difficulty poster to the top before applying the configured target, so a retained
+  # Medium/Hard/Expert selection cannot silently override `difficulty: easy`.
+  difficulty_home_presses: 3
+
+  # During calibration a failed song returns to New Song rather than blindly retrying
+  # the same chart/difficulty forever. This also lets V9 re-enter the difficulty poster
+  # and enforce the configured target after upgrading from an already-failed V8 run.
+  failed_song_action: new_song
+  failed_card_threshold: 0.72
 
   # Menu/presentation arbitration. Unknown moving screens are always preserved as
   # presentation; static loading after a launch is also input-silent.
@@ -72,10 +83,12 @@ profile:
   post_song_settle_seconds: 1.25
   post_song_confirm_limit: 4
 
-  # V8 highway vision solves all five colored fret receptors as one ordered layout
-  # instead of independently choosing any same-colored stage blob.  The layout must
+  # V8/V9 highway vision solves all five colored fret receptors as one ordered layout
+  # instead of independently choosing any same-colored stage blob. The layout must
   # agree for several frames before it is locked, and a note only fires when its head
-  # reaches the narrow arrival zone immediately above that receptor.
+  # reaches the narrow arrival zone immediately above that receptor. V9 additionally
+  # masks blue/orange on Easy and orange on Medium so disabled lanes can never become
+  # false controller inputs.
   vision_width: 640
   vision_height: 480
   gameplay_threshold: 0.64
@@ -97,7 +110,7 @@ profile:
   note_max_area: 1700
 
   # V8 emits binary note-arrival ownership, so the legacy density threshold is only
-  # a compatibility floor.  A slightly longer non-blocking hold gives PCSX2 two or
+  # a compatibility floor. A slightly longer non-blocking hold gives PCSX2 two or
   # three 60 Hz frames to register each fret without turning taps into sustains.
   hit_threshold: 0.50
   hit_reset_threshold: 0.10
@@ -108,7 +121,7 @@ profile:
   sustain_min_run: 0.28
   sustain_grace_seconds: 0.070
 
-  # Keep whammy and Star Power off during the first timing soak.  They add controller
+  # Keep whammy and Star Power off during the first timing soak. They add controller
   # activity but do not help us establish whether base fret timing is correct.
   whammy_enabled: false
   whammy_hz: 7.0
