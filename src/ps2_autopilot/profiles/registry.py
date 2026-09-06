@@ -5,7 +5,7 @@ from typing import Callable
 
 from .base import GameProfile
 from .generic_chaos import GenericChaosProfile
-from .guitar_hero_v5 import GuitarHeroV5Profile
+from .guitar_hero_v6 import GuitarHeroV6Profile
 from .jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from .madden2005_v32 import Madden2005V32Profile
 from .nfs_hot_pursuit_2_v14 import NfsHotPursuit2V14Profile
@@ -25,7 +25,7 @@ def _generic_factory(cfg: dict) -> GameProfile:
 
 
 def _guitar_hero_factory(cfg: dict) -> GameProfile:
-    return GuitarHeroV5Profile(dict(cfg))
+    return GuitarHeroV6Profile(dict(cfg))
 
 
 def _madden_factory(cfg: dict) -> GameProfile:
@@ -52,9 +52,10 @@ PROFILE_SPECS: dict[str, ProfileSpec] = {
         name="guitar_hero",
         display_name="Guitar Hero (2005)",
         template_namespace="guitar_hero",
-        # V5 keeps V4's hardened title/tutorial ownership and changes the first-run
-        # controller card to use menu Confirm/Cross before a bounded L2 fallback.
-        # Keep diagnostic until the complete live lifecycle earns retained evidence.
+        # V6 keeps V5's corrected controller-tutorial Continue path and V4's title
+        # guards, then explicitly owns first-run NAME YOUR BAND and presses Start to
+        # accept the default save/band name. Keep diagnostic until the full live
+        # title -> setup -> menu -> setlist -> song -> results lifecycle is retained.
         maturity="diagnostic",
         factory=_guitar_hero_factory,
     ),
