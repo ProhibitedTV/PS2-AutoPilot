@@ -57,16 +57,19 @@ profile:
   difficulty: easy
   song_advance_after_completion: 1
 
-  # GH1 remembers the last difficulty selection. V9 deliberately homes the four-row
-  # difficulty poster to the top before applying the configured target, so a retained
-  # Medium/Hard/Expert selection cannot silently override `difficulty: easy`.
+  # GH1 remembers the last difficulty selection. Home the four-row poster to the top
+  # before applying the configured target so a retained Medium/Hard/Expert selection
+  # cannot silently override `difficulty: easy`.
   difficulty_home_presses: 3
 
-  # During calibration a failed song returns to New Song rather than blindly retrying
-  # the same chart/difficulty forever. This also lets V9 re-enter the difficulty poster
-  # and enforce the configured target after upgrading from an already-failed V8 run.
+  # Failed songs return to New Song during calibration. V10 reads the actual yellow
+  # RETRY/NEW SONG/QUIT selection and moves it directly instead of relying on generic
+  # frame-signature progress, which could strand an unattended stream on this card.
   failed_song_action: new_song
   failed_card_threshold: 0.72
+  failed_menu_settle_seconds: 0.18
+  failed_confirm_retry_seconds: 1.0
+  failed_selection_tolerance: 0.052
 
   # Menu/presentation arbitration. Unknown moving screens are always preserved as
   # presentation; static loading after a launch is also input-silent.
@@ -83,12 +86,10 @@ profile:
   post_song_settle_seconds: 1.25
   post_song_confirm_limit: 4
 
-  # V8/V9 highway vision solves all five colored fret receptors as one ordered layout
-  # instead of independently choosing any same-colored stage blob. The layout must
-  # agree for several frames before it is locked, and a note only fires when its head
-  # reaches the narrow arrival zone immediately above that receptor. V9 additionally
-  # masks blue/orange on Easy and orange on Medium so disabled lanes can never become
-  # false controller inputs.
+  # Joint receptor geometry from V8 remains the spatial foundation. V10 adds a
+  # temporal layer: a colored component must demonstrably approach the strike line
+  # over multiple frames before it may fire. Observed approach velocity supplies a
+  # bounded sub-frame lead to compensate capture/controller latency.
   vision_width: 640
   vision_height: 480
   gameplay_threshold: 0.64
@@ -101,17 +102,20 @@ profile:
   receptor_lock_match_radius: 0.045
   note_lookahead: 0.18
   note_trigger_gap: 0.030
-  # Keep the permanent colored receptor ring itself outside the note search. At
-  # 480p this is ~12 px above receptor center; incoming note heads are still visible
-  # immediately above it, but an idle highway cannot self-trigger every lane.
   note_receptor_exclusion: 0.024
   note_lane_half_width: 0.032
   note_min_area: 7
   note_max_area: 1700
+  approach_history_frames: 4
+  approach_min_delta: 0.0015
+  approach_backtrack_tolerance: 0.006
+  approach_missing_grace_frames: 1
+  timing_lead_frames: 0.80
+  timing_trigger_max: 0.055
 
-  # V8 emits binary note-arrival ownership, so the legacy density threshold is only
-  # a compatibility floor. A slightly longer non-blocking hold gives PCSX2 two or
-  # three 60 Hz frames to register each fret without turning taps into sustains.
+  # Easy only uses green/red/yellow; the active profile suppresses impossible lanes.
+  # A slightly longer non-blocking hold gives PCSX2 two or three 60 Hz frames to
+  # register each valid fret without turning taps into sustains.
   hit_threshold: 0.50
   hit_reset_threshold: 0.10
   tap_hold_seconds: 0.040
@@ -121,8 +125,7 @@ profile:
   sustain_min_run: 0.28
   sustain_grace_seconds: 0.070
 
-  # Keep whammy and Star Power off during the first timing soak. They add controller
-  # activity but do not help us establish whether base fret timing is correct.
+  # Keep whammy and Star Power off until base note perception/timing is credible.
   whammy_enabled: false
   whammy_hz: 7.0
   star_power_enabled: false
