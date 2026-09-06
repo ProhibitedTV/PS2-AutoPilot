@@ -88,7 +88,10 @@ profile:
   receptor_lock_match_radius: 0.045
   note_lookahead: 0.18
   note_trigger_gap: 0.030
-  note_receptor_exclusion: 0.008
+  # Keep the permanent colored receptor ring itself outside the note search. At
+  # 480p this is ~12 px above receptor center; incoming note heads are still visible
+  # immediately above it, but an idle highway cannot self-trigger every lane.
+  note_receptor_exclusion: 0.024
   note_lane_half_width: 0.032
   note_min_area: 7
   note_max_area: 1700
