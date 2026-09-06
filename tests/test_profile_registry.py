@@ -3,6 +3,7 @@ import pytest
 from ps2_autopilot.profiles import GuitarHeroProfile, Madden2005Profile
 from ps2_autopilot.profiles.guitar_hero_v2 import GuitarHeroV2Profile
 from ps2_autopilot.profiles.guitar_hero_v3 import GuitarHeroV3Profile
+from ps2_autopilot.profiles.guitar_hero_v4 import GuitarHeroV4Profile
 from ps2_autopilot.profiles.jak_and_daxter_v22_hardened import JakAndDaxterV22Profile
 from ps2_autopilot.profiles.madden2005_v32 import Madden2005V32Profile
 from ps2_autopilot.profiles.registry import (
@@ -20,11 +21,12 @@ def test_registry_selects_exact_active_madden_v32_factory():
     assert get_profile_spec("madden2005").maturity == "production-candidate"
 
 
-def test_registry_selects_guitar_hero_v3_and_aliases():
+def test_registry_selects_guitar_hero_v4_and_aliases():
     profile = build_profile({"name": "gh1", "difficulty": "easy"})
-    assert type(profile) is GuitarHeroV3Profile
-    assert GuitarHeroProfile is GuitarHeroV3Profile
-    assert GuitarHeroV2Profile is not GuitarHeroV3Profile
+    assert type(profile) is GuitarHeroV4Profile
+    assert GuitarHeroProfile is GuitarHeroV4Profile
+    assert GuitarHeroV2Profile is not GuitarHeroV4Profile
+    assert GuitarHeroV3Profile is not GuitarHeroV4Profile
     assert get_profile_spec("guitarhero").name == "guitar_hero"
     assert get_profile_spec("gh").maturity == "diagnostic"
     assert canonical_profile_name("guitar-hero-1") == "guitar_hero"
