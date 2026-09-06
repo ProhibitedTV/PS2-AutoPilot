@@ -62,14 +62,15 @@ profile:
   # cannot silently override `difficulty: easy`.
   difficulty_home_presses: 3
 
-  # Failed songs return to New Song during calibration. V10 reads the actual yellow
-  # RETRY/NEW SONG/QUIT selection and moves it directly instead of relying on generic
-  # frame-signature progress, which could strand an unattended stream on this card.
+  # Failed songs return to New Song during calibration. V11 preserves explicit setlist
+  # ownership through the animated failure->setlist transition so V4's broad title
+  # detector cannot reset the route to BOOT and strand the stream on Start probes.
   failed_song_action: new_song
   failed_card_threshold: 0.72
   failed_menu_settle_seconds: 0.18
   failed_confirm_retry_seconds: 1.0
   failed_selection_tolerance: 0.052
+  failure_transition_seconds: 5.0
 
   # Menu/presentation arbitration. Unknown moving screens are always preserved as
   # presentation; static loading after a launch is also input-silent.
@@ -86,26 +87,33 @@ profile:
   post_song_settle_seconds: 1.25
   post_song_confirm_limit: 4
 
-  # Joint receptor geometry from V8 remains the spatial foundation. V10 adds a
-  # temporal layer: a colored component must demonstrably approach the strike line
-  # over multiple frames before it may fire. Observed approach velocity supplies a
-  # bounded sub-frame lead to compensate capture/controller latency.
-  vision_width: 640
-  vision_height: 480
+  # The retained V9 soak was nowhere near its 16.67 ms loop budget: capture was ~30 ms
+  # and policy ~47 ms. V11 therefore reduces the normalized vision raster and candidate
+  # fan-out, then uses local receptor support instead of a 5-lane Cartesian search once
+  # the highway is locked. Full geometry is reacquired immediately if support weakens.
+  vision_width: 480
+  vision_height: 360
   gameplay_threshold: 0.64
-  receptor_candidate_limit: 6
+  receptor_candidate_limit: 4
   receptor_joint_min_span: 0.18
   receptor_joint_max_span: 0.58
   receptor_joint_max_y_spread: 0.055
   receptor_lock_threshold: 0.80
   receptor_lock_frames: 3
   receptor_lock_match_radius: 0.045
+  fast_lock_min_ratio: 0.035
+  fast_lock_half_width: 0.022
+  fast_lock_half_height: 0.026
   note_lookahead: 0.18
   note_trigger_gap: 0.030
   note_receptor_exclusion: 0.024
   note_lane_half_width: 0.032
-  note_min_area: 7
-  note_max_area: 1700
+  note_min_area: 5
+  note_max_area: 1100
+
+  # V10's temporal validation remains in place: a candidate must move toward the
+  # strike line before it may fire, and measured per-frame approach supplies a bounded
+  # latency lead. V11 skips menu morphology while launch/gameplay owns the frame.
   approach_history_frames: 4
   approach_min_delta: 0.0015
   approach_backtrack_tolerance: 0.006
@@ -114,8 +122,7 @@ profile:
   timing_trigger_max: 0.055
 
   # Easy only uses green/red/yellow; the active profile suppresses impossible lanes.
-  # A slightly longer non-blocking hold gives PCSX2 two or three 60 Hz frames to
-  # register each valid fret without turning taps into sustains.
+  # Keep taps modest while we establish a stable perception/timing baseline.
   hit_threshold: 0.50
   hit_reset_threshold: 0.10
   tap_hold_seconds: 0.040
